@@ -39,6 +39,16 @@ ml = [
 research = [
     "tavily-python",
 ]
+# Vector store for retrieval. Qdrant runs in-memory (QdrantClient(":memory:"))
+# for tests and the offline demo; a Docker Qdrant is only needed for the full demo.
+vectorstore = [
+    "qdrant-client",
+]
+# Local embeddings (fastembed: small ONNX model, no API key, no cost). The
+# optional LiteLLM embedder reuses the core `litellm` dependency.
+embeddings = [
+    "fastembed",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/decision_sim"]

@@ -2,6 +2,38 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 2e: Qdrant vector store + fastembed embeddings
+
+**Goal:** A real vector backend behind the existing `Retriever` interface, with
+no running server and no API key needed for tests or the offline demo.
+
+**What changed:**
+- `pyproject.toml` — two optional extras: `vectorstore = ["qdrant-client"]` and
+  `embeddings = ["fastembed"]`. (The optional LiteLLM embedder reuses the core
+  `litellm` dep.)
+- `src/decision_sim/intelligence/embeddings.py` (new) — both implement the
+  `EmbeddingFn` protocol, lazy-importing the optional dep only on construction:
+  - `FastEmbedEmbedder` — local ONNX model (default `BAAI/bge-small-en-v1.5`), no
+    key/cost; injectable `model` for tests.
+  - `LiteLLMEmbedder` — API embedder, model from arg or `EMBED_MODEL`.
+- `src/decision_sim/intelligence/vectorstore.py` (new) — `QdrantRetriever`
+  implementing `Retriever`. Defaults to `QdrantClient(location=":memory:")` so
+  tests/demo need no server (Docker Qdrant only for the full demo). Stores each
+  `Evidence` as a point payload, so search round-trips provenance; cosine
+  distance; injectable `client`; same `k`/empty-store/vector-count guards as the
+  other retrievers.
+- `tests/test_intelligence_vectorstore.py` (new) — 8 tests against **real
+  in-memory Qdrant** with a deterministic fake embedder (ranking, `k` limit,
+  empty store, empty add, `k` validation, vector-count validation, provenance
+  round-trip, protocol conformance).
+- `tests/test_intelligence_embeddings.py` (new) — 3 tests: `LiteLLMEmbedder`
+  model/env handling; a `FastEmbedEmbedder` integration test (real local model,
+  deterministic output) guarded by `importorskip`.
+
+**Result:** full suite **214 passed**, `ruff` clean. Vectorstore + embeddings
+tests ran against the real libraries (in-memory Qdrant, local fastembed model) —
+no network/server.
+
 ## 2026-11-05 — Phase 2d: retrieval (offline-first RAG)
 
 **Goal:** Retrieve the most relevant ingested `Evidence` for a query while
