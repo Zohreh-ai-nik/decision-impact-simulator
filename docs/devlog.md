@@ -2,6 +2,27 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Activity metrics, run report, and UI analysis panel
+
+**Goal:** Surface per-agent activity and bundle coalitions + influence +
+activity into one consolidated, serialisable report, then show it in the UI.
+
+**What changed:**
+- `src/decision_sim/analysis/activity.py` — `activity_counts` (per agent,
+  excludes the `Breaking News` pseudo-agent), `channel_counts` (per channel,
+  all posts), `activity_dataframe` (tidy `agent`/`posts` frame sorted by volume).
+- `src/decision_sim/analysis/report.py` — `RunReport` (Pydantic, `extra="forbid"`)
+  and `build_report(posts, agent_stances, scenario)` composing coalitions,
+  influence, activity, and mean stance into one object. Stays pure (schemas +
+  analysis/quant only; no `simulation`/`ui` imports).
+- `src/decision_sim/analysis/__init__.py` — export the new activity + report API.
+- `src/decision_sim/ui/app.py` — new `_render_analysis` panel (coalitions list,
+  influence bar chart, activity bar chart), called after `_render_impact`.
+- `tests/test_report.py` — activity counts exclude Breaking News, dataframe
+  shape/empty, and `build_report` aggregation + serialisation.
+
+**Results:** `ruff check` clean; `pytest -q` → 69 passed.
+
 ## 2026-11-05 — Analysis layer (`analysis/`: coalitions + influence)
 
 **Goal:** Add "who aligns with whom" (coalitions) and "who is most influential"

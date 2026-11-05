@@ -14,6 +14,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from decision_sim.analysis.activity import activity_dataframe
+from decision_sim.analysis.report import build_report
 from decision_sim.config import SimConfig
 from decision_sim.quant.formatting import impact_histogram, impact_summary_rows
 from decision_sim.quant.monte_carlo import simulate_impact
@@ -83,6 +85,37 @@ def _render_impact(scenario: Scenario, stances) -> None:
             "revenue_impact"
         )
         st.bar_chart(hist_df)
+
+
+def _render_analysis(scenario: Scenario, posts: list[Post], stances) -> None:
+    """Render coalitions, influence and activity for a finished run."""
+    agent_stances = final_stance_by_agent(stances)
+    report = build_report(posts, agent_stances, scenario)
+
+    st.subheader("Analysis")
+    if report.most_influential:
+        st.caption(f"Most influential agent: **{report.most_influential}**")
+
+    st.markdown("**Coalitions** (agents with aligned final stances)")
+    if report.coalitions:
+        for group in report.coalitions:
+            st.write("- " + ", ".join(group))
+    else:
+        st.write("- None detected.")
+
+    cols = st.columns(2)
+    with cols[0]:
+        st.markdown("**Influence**")
+        if report.influence:
+            inf_df = pd.DataFrame(report.influence, columns=["agent", "score"]).set_index(
+                "agent"
+            )
+            st.bar_chart(inf_df)
+    with cols[1]:
+        st.markdown("**Activity (posts per agent)**")
+        act_df = activity_dataframe(posts)
+        if not act_df.empty:
+            st.bar_chart(act_df.set_index("agent"))
 
 
 
@@ -162,6 +195,7 @@ def main() -> None:
         path = save_run(final_state)
         st.success(f"Run complete ({final_state['rounds_executed']} rounds). Saved to {path}")
         _render_impact(scenario, final_state["stances"])
+        _render_analysis(scenario, final_state["posts"], final_state["stances"])
 
 
 if __name__ == "__main__":
