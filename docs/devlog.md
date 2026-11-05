@@ -2,6 +2,30 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 2c: document ingestion
+
+**Goal:** Turn local documents into citable `Evidence` chunks so uploaded files
+feed the research layer the same way web results do — with provenance.
+
+**What changed:**
+- `src/decision_sim/intelligence/ingest.py` (new, stdlib + Pydantic only):
+  - `load_text(path)` — UTF-8 read of `.txt`/`.md`; explicit `ValueError` for
+    unsupported types (PDF deferred) and `FileNotFoundError` for missing files.
+  - `chunk_text(text, chunk_size=800, overlap=100)` — overlapping character
+    windows so a fact straddling a boundary survives; empty text → no chunks;
+    validates params.
+  - `ingest_file(path)` — one `Evidence` per chunk, each cited with a `file://`
+    `Source` (absolute URI, filename as title, chunk preview as snippet).
+  - `ingest_dir(dir, pattern="*.md")` — ingest matching files, sorted by name.
+  - Document text is treated strictly as **data** (only stored in
+    `Evidence.text`, never interpreted).
+- `tests/test_intelligence_ingest.py` (new) — 13 offline tests using `tmp_path`:
+  load/validation, chunking (short/empty/size+overlap/boundary/bad params),
+  ingest_file (one-per-chunk, file:// sources, empty doc), ingest_dir (pattern
+  filter + sorted, missing dir).
+
+**Result:** full suite **187 passed**, `ruff` clean.
+
 ## 2026-11-05 — Phase 2b: live Tavily search provider
 
 **Goal:** Add a real web provider behind the existing `SearchProvider` protocol,
