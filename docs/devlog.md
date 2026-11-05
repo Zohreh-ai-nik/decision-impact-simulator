@@ -2,6 +2,28 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Impact in the UI (`quant/formatting` + Streamlit)
+
+**Goal:** Show the quantified impact at the end of a run in the Streamlit app.
+
+**What changed:**
+- `src/decision_sim/quant/formatting.py` — pure, NumPy-only helpers:
+  `impact_histogram(result, bins)` (bin centres + counts) and
+  `impact_summary_rows(result)` (formatted metric rows). No simulation/ui imports.
+- `src/decision_sim/ui/app.py` — after a run, if the scenario has a `business`
+  section, computes impact via `final_stance_by_agent(...)` ->
+  `simulate_impact(...)` and renders p10/p50/p90 metrics, a summary list, and a
+  histogram (`st.bar_chart`). Logic stays in `src`; the UI only renders.
+- `tests/test_formatting.py` — 4 tests: histogram lengths/counts, empty samples,
+  bad bins, and summary-row content (incl. percentage formatting).
+
+**Design choices:**
+- Formatting helpers return plain lists/tuples so they are trivially testable and
+  keep `quant` free of UI concerns.
+
+**Commands:** `ruff check src tests`, `pytest -q`.
+**Result:** 54 tests pass, lint clean, app imports cleanly.
+
 ## 2026-11-05 — Quantitative impact layer (`quant/`)
 
 **Goal:** Turn agent stances into a quantified revenue impact with uncertainty

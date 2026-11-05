@@ -11,12 +11,16 @@ Run with::
 
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from decision_sim.config import SimConfig
+from decision_sim.quant.formatting import impact_histogram, impact_summary_rows
+from decision_sim.quant.monte_carlo import simulate_impact
 from decision_sim.scenario import add_signal, list_scenarios, load_scenario
 from decision_sim.schemas import Post, Scenario
 from decision_sim.simulation.graph import (
+    final_stance_by_agent,
     iter_simulation,
     save_run,
     stances_dataframe,
@@ -51,6 +55,35 @@ def _render_chart(scenario: Scenario, stances) -> None:
         index="global_round", columns="agent", values="score", aggfunc="last"
     )
     st.line_chart(pivot)
+
+
+def _render_impact(scenario: Scenario, stances) -> None:
+    """Compute and render the quantified revenue impact for a finished run."""
+    if scenario.business is None:
+        st.info("This scenario has no business section, so no impact is estimated.")
+        return
+
+    agent_stances = final_stance_by_agent(stances)
+    result = simulate_impact(agent_stances, scenario.business)
+
+    st.subheader("Estimated impact")
+    cols = st.columns(3)
+    cols[0].metric("Revenue impact (p50)", f"{result.revenue_impact_p50:,.0f}")
+    cols[1].metric(
+        "Downside (p10)", f"{result.revenue_impact_p10:,.0f}"
+    )
+    cols[2].metric("Upside (p90)", f"{result.revenue_impact_p90:,.0f}")
+
+    for label, value in impact_summary_rows(result):
+        st.write(f"- **{label}:** {value}")
+
+    centers, counts = impact_histogram(result)
+    if centers:
+        hist_df = pd.DataFrame({"revenue_impact": centers, "runs": counts}).set_index(
+            "revenue_impact"
+        )
+        st.bar_chart(hist_df)
+
 
 
 def main() -> None:
@@ -128,6 +161,7 @@ def main() -> None:
     if final_state is not None:
         path = save_run(final_state)
         st.success(f"Run complete ({final_state['rounds_executed']} rounds). Saved to {path}")
+        _render_impact(scenario, final_state["stances"])
 
 
 if __name__ == "__main__":
