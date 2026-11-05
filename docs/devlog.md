@@ -2,6 +2,36 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 2a: offline-first search providers
+
+**Goal:** Give the research layer a clean, swappable way to fetch real facts
+without any network during tests or demos, and let local documents be cited the
+same way as web pages.
+
+**What changed:**
+- `src/decision_sim/intelligence/web_search.py` (new):
+  - `SearchResult` (Pydantic v2, `extra="forbid"`): `title`, `url`, `snippet`,
+    optional `published` date, `source`. URL must be `http(s)://` or `file://`.
+  - `SearchProvider` — a `runtime_checkable` Protocol: `search(query, *,
+    max_results) -> list[SearchResult]`.
+  - `FakeSearchProvider` — deterministic, canned results keyed by exact query;
+    returns deep copies so fixtures can't be mutated.
+  - `CachedSearchProvider` — wraps any provider, persists to
+    `data/cache/search/cache.json` (git-ignored). Cache key is
+    `(max_results, query)`; a hit never calls the inner provider.
+- `src/decision_sim/schemas.py` — `Source.url` now also accepts `file://` so
+  uploaded/local documents can be cited alongside web URLs.
+- `tests/test_intelligence_search.py` (new) — 15 offline tests: result
+  validation (file:// ok, bare URL rejected, date parsing), Fake behaviour
+  (canned/unknown/max_results/copies/protocol), Cached behaviour (delegate+write,
+  cache hit via a counting spy, persistence across instances, max_results keying),
+  and `Source` file:// acceptance.
+
+**Deferred to 2b:** real `TavilySearchProvider` (network, key via `.env`),
+implementing the same `SearchProvider` protocol.
+
+**Result:** full suite **166 passed**, `ruff` clean.
+
 ## 2026-11-05 — Phase 8e: wire the model into quant + UI, fix the confounding
 
 **Goal:** Use the churn model for the price-change line of the impact breakdown,

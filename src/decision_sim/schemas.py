@@ -30,8 +30,11 @@ class Source(BaseModel):
     @field_validator("url")
     @classmethod
     def _check_url(cls, value: str) -> str:
-        if not value.startswith(("http://", "https://")):
-            raise ValueError(f"url must start with http:// or https://, got {value!r}.")
+        # http(s) for web sources; file:// for uploaded/local documents.
+        if not value.startswith(("http://", "https://", "file://")):
+            raise ValueError(
+                f"url must start with http://, https:// or file://, got {value!r}."
+            )
         return value
 
 
