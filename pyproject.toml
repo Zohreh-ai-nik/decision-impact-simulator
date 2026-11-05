@@ -54,6 +54,11 @@ embeddings = [
 graph = [
     "neo4j",
 ]
+# Cross-run agent memory. Mem0 is only needed for persistent/semantic recall; tests
+# and the offline demo use the in-process InMemoryStore (no dependency).
+memory = [
+    "mem0ai",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/decision_sim"]

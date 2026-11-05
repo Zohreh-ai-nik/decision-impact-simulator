@@ -19,6 +19,7 @@ from decision_sim.schemas import (
     Stage,
 )
 from decision_sim.simulation import graph
+from decision_sim.simulation.memory import InMemoryStore
 from tests.conftest import FakeLLM
 
 _DEFAULT_REPLY = json.dumps(
@@ -261,3 +262,67 @@ def test_no_evidence_leaves_prompt_ungrounded_and_sources_empty(patched_llm: Fak
     final = graph.run_simulation(scenario, _config(), save=False)
     for post in final["posts"]:
         assert post.sources == []
+
+
+def test_prompt_includes_recalled_memory() -> None:
+    scenario = Scenario(
+        decision="d",
+        client="c",
+        stakeholders=[_agent("A")],
+        stages=[Stage(name="S1", goal="g", rounds=1)],
+        channels=[Channel(name="Main", can_post=["A"], can_read=["A"])],
+    )
+    prompt = graph._build_prompt(
+        scenario,
+        scenario.stakeholders[0],
+        scenario.stages[0],
+        2,
+        [],
+        ["Main"],
+        None,
+        ["[S1 r1] stance +0.10: earlier remark"],
+    )
+    assert "What you said and felt earlier (your own notes):" in prompt
+    assert "earlier remark" in prompt
+
+
+def test_memory_records_and_recalls_across_rounds(patched_llm: FakeLLM) -> None:
+    store = InMemoryStore()
+    scenario = Scenario(
+        decision="Raise premiums by 12%.",
+        client="ShieldDrive Insurance (fictional)",
+        stakeholders=[_agent("A")],
+        stages=[Stage(name="S1", goal="React", rounds=2)],
+        channels=[Channel(name="Main", can_post=["A"], can_read=["A"])],
+    )
+
+    graph.run_simulation(scenario, _config(max_rounds=10), save=False, memory=store)
+
+    # Two rounds -> two stored notes for agent A.
+    notes = store.recall("A", limit=10)
+    assert len(notes) == 2
+    assert all(note.startswith("[S1 r") for note in notes)
+
+    # The round-2 prompt should carry the round-1 note.
+    round2_calls = [
+        c
+        for c in patched_llm.calls
+        if "This is round 2." in c.messages[-1]["content"]
+    ]
+    assert round2_calls
+    assert "your own notes" in round2_calls[0].messages[-1]["content"]
+
+
+def test_no_memory_leaves_prompt_without_notes(patched_llm: FakeLLM) -> None:
+    scenario = Scenario(
+        decision="Raise premiums by 12%.",
+        client="ShieldDrive Insurance (fictional)",
+        stakeholders=[_agent("A")],
+        stages=[Stage(name="S1", goal="React", rounds=2)],
+        channels=[Channel(name="Main", can_post=["A"], can_read=["A"])],
+    )
+
+    graph.run_simulation(scenario, _config(max_rounds=10), save=False)
+
+    assert all("your own notes" not in c.messages[-1]["content"] for c in patched_llm.calls)
+

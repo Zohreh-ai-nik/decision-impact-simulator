@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from decision_sim import llm
 from decision_sim.config import SimConfig
 from decision_sim.schemas import Evidence, Post, Scenario, Source, Stance
+from decision_sim.simulation.memory import MemoryStore
 
 # Repository root: src/decision_sim/simulation/graph.py -> parents[3]
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -132,6 +133,7 @@ def _build_prompt(
     recent: list[Post],
     postable: list[str],
     evidence: list[Evidence] | None = None,
+    memories: list[str] | None = None,
 ) -> str:
     lines = [
         f"Decision under consideration: {scenario.decision}",
@@ -152,6 +154,10 @@ def _build_prompt(
         f"This is round {round_no}.",
         "",
     ]
+    if memories:
+        lines.append("What you said and felt earlier (your own notes):")
+        lines += [f"- {m}" for m in memories]
+        lines.append("")
     if recent:
         lines.append("Recent messages you can see:")
         lines += [f"- [{p.channel}] {p.agent}: {p.text}" for p in recent]
@@ -209,6 +215,7 @@ def _apply_due_signals(
 def build_graph(
     config: SimConfig,
     evidence_by_agent: dict[str, list[Evidence]] | None = None,
+    memory: MemoryStore | None = None,
 ):
     """Build and compile the LangGraph state machine for ``config``.
 
@@ -216,6 +223,10 @@ def build_graph(
     :class:`Evidence` it should ground its reactions in. When provided, each
     agent's evidence is shown as a numbered reference-data block and the sources
     it cites are attached to the resulting :class:`Post` and :class:`Stance`.
+
+    ``memory`` optionally gives each agent a recollection of its own prior turns:
+    before each turn the agent recalls its recent notes (injected into the prompt),
+    and after each turn a short summary is stored. ``None`` disables memory.
     """
     evidence_by_agent = evidence_by_agent or {}
 
@@ -244,8 +255,13 @@ def build_graph(
                 posts, agent.name, scenario, config.recent_posts_window
             )
             evidence = evidence_by_agent.get(agent.name, [])
+            memories = (
+                memory.recall(agent.name, query=stage.goal, limit=config.memory_recall_limit)
+                if memory is not None
+                else []
+            )
             prompt = _build_prompt(
-                scenario, agent, stage, round_no, recent, postable, evidence
+                scenario, agent, stage, round_no, recent, postable, evidence, memories
             )
             reply = llm.ask(
                 prompt,
@@ -274,6 +290,11 @@ def build_graph(
                     stance=stance,
                 )
             )
+            if memory is not None:
+                memory.add(
+                    agent.name,
+                    f"[{stage.name} r{round_no}] stance {stance.score:+.2f}: {reply.text}",
+                )
 
         # Advance the timeline.
         if round_no < stage.rounds:
@@ -341,10 +362,11 @@ def run_simulation(
     *,
     save: bool = True,
     evidence_by_agent: dict[str, list[Evidence]] | None = None,
+    memory: MemoryStore | None = None,
 ) -> SimState:
     """Run a full simulation and optionally persist it to ``data/runs/``."""
     config = config or SimConfig()
-    app = build_graph(config, evidence_by_agent)
+    app = build_graph(config, evidence_by_agent, memory)
     final: SimState = app.invoke(
         _initial_state(scenario), {"recursion_limit": _step_limit(scenario, config)}
     )
@@ -375,6 +397,7 @@ def iter_simulation(
     config: SimConfig | None = None,
     *,
     evidence_by_agent: dict[str, list[Evidence]] | None = None,
+    memory: MemoryStore | None = None,
 ) -> Iterator[SimState]:
     """Yield the simulation state after each round, for incremental UIs.
 
@@ -382,7 +405,7 @@ def iter_simulation(
     persist the final state with :func:`save_run` if desired.
     """
     config = config or SimConfig()
-    app = build_graph(config, evidence_by_agent)
+    app = build_graph(config, evidence_by_agent, memory)
     for update in app.stream(
         _initial_state(scenario),
         {"recursion_limit": _step_limit(scenario, config)},

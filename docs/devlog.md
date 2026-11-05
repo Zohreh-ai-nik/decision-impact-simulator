@@ -2,6 +2,32 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 8: per-agent memory (Mem0)
+
+**Goal:** give each agent a memory of its *own* prior turns so its stance evolves
+coherently across rounds/stages, not just reacting to the recent-posts window.
+
+**Design (offline-first, same pattern as the intelligence layer):**
+- `simulation/memory.py` (new) — `MemoryStore` protocol (`add`/`recall`), default
+  `InMemoryStore` (per-agent list, recency recall, zero deps, deterministic), and
+  optional `Mem0Store` (lazy `mem0` import, injectable client, semantic recall,
+  credentials from env and never logged).
+- `simulation/graph.py` — `build_graph`/`run_simulation`/`iter_simulation` take an
+  optional `memory`. Before each turn the agent recalls its recent notes (injected
+  into the prompt as "your own notes", clearly distinct from reference data); after
+  each turn a short summary `[stage rN] stance +x.xx: <text>` is stored. `None` ->
+  unchanged behaviour.
+- `config/SimConfig` — new `memory_recall_limit` (default 5).
+- `pyproject.toml` — new optional `memory = ["mem0ai"]` extra.
+
+**Files changed:** `src/decision_sim/simulation/memory.py` (new),
+`src/decision_sim/simulation/graph.py`, `src/decision_sim/config/__init__.py`,
+`pyproject.toml`, `tests/test_simulation_memory.py` (new, 9),
+`tests/test_graph.py` (+4).
+
+**Result:** `ruff check` clean; `pytest -q` → 250 passed, 1 skipped (Mem0 not
+installed) (was 239).
+
 ## 2026-11-05 — Phase 2i: UI for uploaded docs + knowledge graph
 
 **Goal:** Let the user upload documents in the Streamlit app, ground the
