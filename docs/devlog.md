@@ -2,6 +2,40 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 8d: per-customer churn prediction
+
+**Goal:** Turn the trained model into calibrated, per-customer churn estimates
+without letting the European dataset's absolute lapse level (~12.8%) override the
+FCA UK base (0.40).
+
+**What changed:**
+- `src/decision_sim/ml/predict.py` — the prediction layer:
+  - `build_portfolio(features, n, seed)` — fictional ShieldDrive portfolio by
+    seeded resampling of dataset rows.
+  - `rescale_to_base(probs, base=0.40)` — a **monotonic logit shift** (found by
+    bisection) so the portfolio mean equals the FCA base while keeping the
+    relative risk ordering; result stays in [0, 1].
+  - `predict_base_churn(model, portfolio, base)` — model risk ranking rescaled to
+    the FCA base (relative risk, not absolute level).
+  - `apply_price_increase(portfolio, pct)` — raises `prem_final` and recomputes
+    the price ratios (`prem_last`/`prem_market` unchanged by a renewal rise).
+  - `predict_price_effect(model, portfolio, pct)` — per-customer `pred(new) -
+    pred(old)`, returned **unclipped** so the caller can judge plausibility.
+- `tests/test_ml_predict.py` — 11 offline tests (portfolio size/determinism,
+  rescale hits target mean + preserves ordering + stays in range, base churn ==
+  FCA mean, price-increase scaling and zero-identity, price-effect shape/zero).
+
+**Real results (HGB, portfolio of 5,000 resampled rows, seed 7):**
+- Base churn mean = **0.4000** (= FCA target), spread **0.16–0.86** across
+  customer types — the relative-risk rescaling works as intended.
+- Price effect @12%: mean **−0.0128**, only **36%** of customers positive (range
+  −0.43 to +0.23). **The model's price-delta is negative on average** — the same
+  confounding found in 8c (bigger rises went to stickier customers). So the raw
+  model price effect is **not plausible**; Phase 8e will fall back to the labelled
+  `max_extra_churn` (0.15) assumption and upper bound, as planned.
+
+**Validation:** `ruff check` clean; `pytest -q` → **136 passed**.
+
 ## 2026-11-05 — Phase 8c: churn model training, evaluation and EDA
 
 **Goal:** Train the churn model on `eudirectlapse`, evaluate it honestly, and
