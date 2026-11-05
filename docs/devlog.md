@@ -2,6 +2,35 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 8a/8b: churn dataset + feature engineering
+
+**Goal:** Start the real churn model. Acquire the public `eudirectlapse` dataset
+and build a pure, tested data-prep layer. The model will supply *relative* churn
+risk and the price-change effect only — never the absolute UK level (this is a
+European direct insurer, ~12.8% lapse), which stays pinned to the FCA 0.40 base.
+
+**What changed:**
+- `pyproject.toml` — added `scikit-learn` + `pyreadr` as core deps (scikit-learn
+  also pulls in scipy, fixing the earlier networkx pagerank import); added an
+  optional `ml` extra (`mlflow`, `matplotlib`) for the notebook and optional
+  experiment logging, kept out of the default install and test path.
+- `scripts/download_data.py` — downloads the `.rda` to `data/raw/` (git-ignored),
+  converts to parquet via pyreadr, and asserts the shape. Ran it:
+  **23,060 rows × 19 columns** confirmed; lapse rate 12.81% (matches the docs).
+- `src/decision_sim/ml/data.py` — pure cleaning + feature engineering (pandas
+  only): `load_dataset`, `clean` (validates columns, binary target, drops
+  non-positive premiums), `build_features` (adds `price_change =
+  prem_final/prem_last - 1` and `price_vs_market = prem_final/prem_market - 1`),
+  `split_xy`, `prepare`. Feature sets exported as constants for the trainer.
+- `tests/fixtures/eudirectlapse_tiny.csv` — a 40-row **synthetic** fixture with
+  the real schema (no real dataset rows redistributed; dataset is GPL and not
+  committed).
+- `tests/test_ml_data.py` — 11 tests covering loading, cleaning, ratio maths,
+  column selection, immutability and validation. Fully offline.
+
+**Results:** `ruff check` clean; `pytest -q` → 116 passed. `data/` and the trained
+model dir stay git-ignored.
+
 ## 2026-11-05 — Phase 7: calibrate base churn to FCA EP25/2, split base/extra/total
 
 **Goal:** Replace the placeholder 8% base churn with a figure grounded in a

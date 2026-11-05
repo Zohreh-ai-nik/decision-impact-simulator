@@ -19,12 +19,20 @@ dependencies = [
     "pandas",
     "networkx",
     "streamlit",
+    "scikit-learn",
+    "pyreadr",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
     "ruff",
+]
+# Experiment tracking and plotting, used by the churn-model notebook and the
+# optional MLflow logger. Not required to run the app or the test suite.
+ml = [
+    "mlflow",
+    "matplotlib",
 ]
 
 [tool.hatch.build.targets.wheel]
