@@ -42,6 +42,16 @@ ModelName = Literal["logreg", "hgb"]
 DEFAULT_MODEL_PATH = Path("models/churn_model.joblib")
 DEFAULT_SEED = 7
 
+# Price features may only *increase* churn, never decrease it. This removes the
+# dataset confounding (bigger rises were given to stickier customers) so the
+# price-change effect comes out with the right sign. Keyed on the transformed
+# column names produced by the ColumnTransformer (``num__<feature>``).
+_MONOTONIC_INCREASING_PRICE = {
+    "num__price_change": 1,
+    "num__price_vs_market": 1,
+    "num__price_vs_technical": 1,
+}
+
 
 @dataclass(frozen=True)
 class EvalResult:
@@ -55,8 +65,13 @@ class EvalResult:
     pipeline: Pipeline
 
 
-def _build_pipeline(model_name: ModelName, seed: int) -> Pipeline:
-    """Construct a preprocessing + estimator pipeline for the named model."""
+def _build_pipeline(model_name: ModelName, seed: int, *, monotonic: bool = True) -> Pipeline:
+    """Construct a preprocessing + estimator pipeline for the named model.
+
+    When ``monotonic`` is true, the HGB model constrains the price features to be
+    monotonically increasing in churn (see ``_MONOTONIC_INCREASING_PRICE``); it
+    has no effect on the linear baseline.
+    """
     if model_name == "logreg":
         pre = ColumnTransformer(
             transformers=[
@@ -75,7 +90,12 @@ def _build_pipeline(model_name: ModelName, seed: int) -> Pipeline:
                 ("cat", dense_one_hot, CATEGORICAL_FEATURES),
             ]
         )
-        estimator = HistGradientBoostingClassifier(random_state=seed)
+        # Pandas output so the monotonic constraints can be keyed by column name.
+        pre.set_output(transform="pandas")
+        monotonic_cst = dict(_MONOTONIC_INCREASING_PRICE) if monotonic else None
+        estimator = HistGradientBoostingClassifier(
+            random_state=seed, monotonic_cst=monotonic_cst
+        )
     else:  # pragma: no cover - guarded by Literal typing
         raise ValueError(f"Unknown model_name: {model_name!r}.")
 
@@ -89,6 +109,7 @@ def train_model(
     seed: int = DEFAULT_SEED,
     test_size: float = 0.25,
     track: bool = False,
+    monotonic: bool = True,
 ) -> EvalResult:
     """Fit one model on a stratified split and return metrics + the pipeline.
 
@@ -98,6 +119,7 @@ def train_model(
         seed: Random seed for the split and the estimator.
         test_size: Fraction held out for evaluation.
         track: Log params/metrics to MLflow when available.
+        monotonic: Constrain price features to only increase churn (HGB only).
 
     Returns:
         An :class:`EvalResult` with ROC AUC, Brier score and the fitted pipeline.
@@ -107,7 +129,7 @@ def train_model(
         x, y, test_size=test_size, random_state=seed, stratify=y
     )
 
-    pipeline = _build_pipeline(model_name, seed)
+    pipeline = _build_pipeline(model_name, seed, monotonic=monotonic)
     pipeline.fit(x_train, y_train)
 
     probs = pipeline.predict_proba(x_test)[:, 1]
@@ -116,7 +138,13 @@ def train_model(
 
     with start_run(f"churn-{model_name}", enabled=track) as logger:
         logger.log_params(
-            {"model": model_name, "seed": seed, "test_size": test_size, "n_train": len(x_train)}
+            {
+                "model": model_name,
+                "seed": seed,
+                "test_size": test_size,
+                "n_train": len(x_train),
+                "monotonic": monotonic,
+            }
         )
         logger.log_metrics({"roc_auc": roc_auc, "brier": brier})
 

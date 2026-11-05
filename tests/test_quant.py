@@ -204,6 +204,69 @@ def test_hostile_customers_churn_more_than_supportive() -> None:
     assert hostile.revenue_impact_mean < supportive.revenue_impact_mean
 
 
+# --- monte carlo: four-line churn breakdown ------------------------------
+
+
+def test_churn_breakdown_components_add_up_to_total() -> None:
+    result = simulate_impact(
+        {"Customers": _stance(-0.6, 0.9)},
+        _business(),
+        MonteCarloConfig(n_runs=1000, seed=7),
+    )
+    total = (
+        result.baseline_churn_rate_mean
+        + result.price_extra_churn_rate_mean
+        + result.agent_adjustment_churn_rate_mean
+    )
+    assert total == pytest.approx(result.churn_rate_mean, abs=1e-9)
+    assert result.price_extra_churn_rate_mean >= 0.0
+
+
+def test_agent_adjustment_negative_when_supportive() -> None:
+    """Supportive stances pull churn below the neutral price reaction."""
+    result = simulate_impact(
+        {"Customers": _stance(0.8, 1.0)},
+        _business(**_no_uncertainty()),
+        MonteCarloConfig(n_runs=500, seed=7),
+    )
+    assert result.agent_adjustment_churn_rate_mean < 0.0
+
+
+def test_model_price_extra_churn_drives_the_price_line() -> None:
+    """A supplied model price effect sets the price line, independent of stance."""
+    business = _business(**_no_uncertainty())
+    result = simulate_impact(
+        {"Customers": _stance(0.0, 1.0)},  # dissatisfaction 0.5 => zero agent adjustment
+        business,
+        MonteCarloConfig(n_runs=1000, seed=7),
+        model_price_extra_churn=0.07,
+    )
+    assert result.price_extra_churn_rate_mean == pytest.approx(0.07, abs=0.01)
+    assert result.agent_adjustment_churn_rate_mean == pytest.approx(0.0, abs=0.01)
+
+
+def test_model_price_extra_churn_is_clipped_to_cap() -> None:
+    business = _business(**_no_uncertainty())
+    result = simulate_impact(
+        {"Customers": _stance(0.0, 1.0)},
+        business,
+        MonteCarloConfig(n_runs=1000, seed=7),
+        model_price_extra_churn=0.99,  # absurd; must clip to max_extra_churn (0.15)
+    )
+    assert result.price_extra_churn_rate_mean == pytest.approx(0.15, abs=0.01)
+
+
+def test_model_base_churn_overrides_centre() -> None:
+    business = _business(base_churn_sd=0.0, max_extra_churn_sd=0.0)
+    result = simulate_impact(
+        {"Customers": _stance(1.0, 1.0)},  # supportive => no extra
+        business,
+        MonteCarloConfig(n_runs=500, seed=7),
+        model_base_churn=0.45,
+    )
+    assert result.baseline_churn_rate_mean == pytest.approx(0.45, abs=0.005)
+
+
 # --- monte carlo: no-price-rise baseline ---------------------------------
 
 

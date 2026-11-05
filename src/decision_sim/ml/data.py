@@ -19,6 +19,9 @@ import pandas as pd
 
 TARGET = "lapse"
 
+# Default location of the prepared real dataset (git-ignored; see docs/data.md).
+DEFAULT_DATA_PATH = Path("data/raw/eudirectlapse.parquet")
+
 # Raw numeric columns used directly as model features.
 RAW_NUMERIC_FEATURES = [
     "polholder_age",  # driver age
@@ -30,9 +33,11 @@ RAW_NUMERIC_FEATURES = [
 ]
 
 # Engineered numeric features derived in :func:`build_features`.
+# Order matters: the HGB monotonic constraints in train.py are positional.
 ENGINEERED_FEATURES = [
     "price_change",  # prem_final / prem_last - 1
     "price_vs_market",  # prem_final / prem_market - 1
+    "price_vs_technical",  # prem_final / prem_pure - 1 (margin over risk cost)
 ]
 
 NUMERIC_FEATURES = RAW_NUMERIC_FEATURES + ENGINEERED_FEATURES
@@ -58,6 +63,7 @@ _REQUIRED_RAW_COLUMNS = [
     *RAW_NUMERIC_FEATURES,
     "prem_last",
     "prem_market",
+    "prem_pure",
     *CATEGORICAL_FEATURES,
 ]
 
@@ -92,19 +98,26 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     for column in CATEGORICAL_FEATURES:
         out[column] = out[column].astype(str)
 
-    positive = (out["prem_last"] > 0) & (out["prem_market"] > 0) & (out["prem_final"] > 0)
+    positive = (
+        (out["prem_last"] > 0)
+        & (out["prem_market"] > 0)
+        & (out["prem_final"] > 0)
+        & (out["prem_pure"] > 0)
+    )
     return out.loc[positive].reset_index(drop=True)
 
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     """Return a frame with the target plus the engineered model features.
 
-    Adds ``price_change`` and ``price_vs_market`` and keeps only ``TARGET`` and
-    ``FEATURES``. Expects an already-:func:`clean`-ed frame.
+    Adds ``price_change``, ``price_vs_market`` and ``price_vs_technical`` and
+    keeps only ``TARGET`` and ``FEATURES``. Expects an already-:func:`clean`-ed
+    frame.
     """
     out = df.copy()
     out["price_change"] = out["prem_final"] / out["prem_last"] - 1.0
     out["price_vs_market"] = out["prem_final"] / out["prem_market"] - 1.0
+    out["price_vs_technical"] = out["prem_final"] / out["prem_pure"] - 1.0
     return out[[TARGET, *FEATURES]].copy()
 
 

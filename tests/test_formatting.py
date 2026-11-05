@@ -24,6 +24,8 @@ def _result(samples: list[float]) -> ImpactResult:
         baseline_churn_rate_mean=0.40,
         churn_rate_mean=0.52,
         extra_churn_rate_mean=0.12,
+        price_extra_churn_rate_mean=0.09,
+        agent_adjustment_churn_rate_mean=0.03,
         lost_customers_mean=6000.0,
         revenue_impact_mean=-50_000.0,
         revenue_impact_std=10_000.0,
@@ -85,21 +87,29 @@ def test_summary_rows_contain_key_metrics() -> None:
     assert "Revenue impact (p50)" in rows
     assert rows["Mean total churn rate"] == "52.00%"
     assert rows["Baseline churn rate (no price rise)"] == "40.00%"
-    assert rows["Extra churn caused by the decision"] == "12.00%"
+    assert rows["Extra churn from price change"] == "9.00%"
+    assert rows["Agent adjustment"] == "+3.00%"
 
 
-def test_churn_breakdown_three_lines() -> None:
+def test_churn_breakdown_four_lines_from_model() -> None:
     rows = churn_breakdown_rows(_result([1.0]))
     labels = [label for label, _ in rows]
     assert labels == [
-        "UK base churn (FCA)",
-        "Extra churn caused by the decision",
-        "Total churn",
+        "UK base churn (FCA, adjusted by customer type)",
+        "Extra churn from price change (model)",
+        "Agent adjustment",
+        "Total",
     ]
     values = dict(rows)
-    assert values["UK base churn (FCA)"] == "40.0%"
-    assert values["Extra churn caused by the decision"] == "12.0%"
-    assert values["Total churn"] == "52.0%"
+    assert values["UK base churn (FCA, adjusted by customer type)"] == "40.0%"
+    assert values["Extra churn from price change (model)"] == "9.0%"
+    assert values["Agent adjustment"] == "+3.0%"
+    assert values["Total"] == "52.0%"
+
+
+def test_churn_breakdown_labels_fallback_as_assumption() -> None:
+    rows = dict(churn_breakdown_rows(_result([1.0]), price_from_model=False))
+    assert "Extra churn from price change (assumption)" in rows
 
 
 def test_summary_rows_show_pounds_and_percent() -> None:

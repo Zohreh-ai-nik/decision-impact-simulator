@@ -17,6 +17,7 @@ import streamlit as st
 from decision_sim.analysis.activity import activity_dataframe
 from decision_sim.analysis.report import build_report
 from decision_sim.config import SimConfig
+from decision_sim.ml.predict import churn_inputs_or_none
 from decision_sim.quant.formatting import (
     churn_assumption_text,
     churn_breakdown_rows,
@@ -73,14 +74,42 @@ def _render_impact(scenario: Scenario, stances) -> None:
         return
 
     agent_stances = final_stance_by_agent(stances)
-    result = simulate_impact(agent_stances, scenario.business)
+    business = scenario.business
+    model_base, model_price = churn_inputs_or_none(
+        price_increase_pct=business.price_increase_pct,
+        base_churn=business.base_churn,
+        max_extra_churn=business.max_extra_churn,
+    )
+    price_from_model = model_price is not None
+    result = simulate_impact(
+        agent_stances,
+        business,
+        model_base_churn=model_base,
+        model_price_extra_churn=model_price,
+    )
 
     st.subheader("Estimated impact (vs. no price rise)")
-    st.caption(churn_assumption_text(scenario.business))
+    st.caption(churn_assumption_text(business))
+    if model_base is None:
+        st.caption(
+            ":grey[No trained churn model found — using the FCA base and the "
+            "labelled assumption for the price-change line.]"
+        )
+    elif not price_from_model:
+        st.caption(
+            ":grey[Model loaded, but its price effect was implausible — using the "
+            "labelled assumption for the price-change line.]"
+        )
+    else:
+        st.caption(
+            f":grey[Price-change line from the trained model "
+            f"(+{model_price:.1%} extra churn, rescaled to the FCA base).]"
+        )
 
     st.markdown("**Churn breakdown**")
-    churn_cols = st.columns(3)
-    for col, (label, value) in zip(churn_cols, churn_breakdown_rows(result), strict=True):
+    churn_cols = st.columns(4)
+    breakdown = churn_breakdown_rows(result, price_from_model=price_from_model)
+    for col, (label, value) in zip(churn_cols, breakdown, strict=True):
         col.metric(label, value)
 
     cols = st.columns(3)

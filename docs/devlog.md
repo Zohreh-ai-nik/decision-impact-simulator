@@ -2,6 +2,55 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 8e: wire the model into quant + UI, fix the confounding
+
+**Goal:** Use the churn model for the price-change line of the impact breakdown,
+but only if its price effect is plausible — and first try to fix the price-change
+confounding (bigger rises go to stickier customers, so a plain model learns the
+wrong sign) before falling back to the labelled assumption.
+
+**Fixing the confounding (in the model):**
+- `ml/data.py` — added `price_vs_technical = prem_final / prem_pure - 1` (margin
+  over the technical premium) so the model can tell "risky customer" from "charged
+  a lot above risk"; drops non-positive `prem_pure`.
+- `ml/train.py` — `HistGradientBoostingClassifier(monotonic_cst=...)` forcing
+  `price_change`, `price_vs_market`, `price_vs_technical` to only increase churn
+  (via `set_output(transform="pandas")` + transformed column names). `monotonic`
+  flag threaded through `train_model`.
+- `notebooks/01_churn_eda.ipynb` §7 — trains unconstrained vs constrained and
+  prints the comparison with a plain-words conclusion.
+
+**Real results (seed 7, 5,000-customer portfolio, 12% rise):** discrimination
+basically unchanged (ROC AUC 0.611 vs 0.613; Brier ~0.110 both), but the mean
+price-delta flips from **−0.3pp** (unconstrained, 54% positive) to **+6.6pp**
+(constrained, 98% positive). Plausible and within the 15pp cap → **the model is
+used** on the price line, with the assumption as fallback.
+
+**Wiring (the 4-line breakdown):**
+- `ml/predict.py` — `churn_inputs_from_model(...)` and `churn_inputs_or_none(...)`:
+  return `(base_churn, price_extra_churn)` as plain floats, or `(None, None)` when
+  the model/data is missing or the effect is implausible. Keeps `quant/` decoupled
+  from `ml/` (floats cross the boundary, not objects).
+- `schemas.py` — `ImpactResult` gains `price_extra_churn_rate_mean` and signed
+  `agent_adjustment_churn_rate_mean`.
+- `quant/monte_carlo.py` — `simulate_impact(..., model_base_churn=None,
+  model_price_extra_churn=None)`. Extra churn splits into a **price component**
+  (model constant, clipped to `max_extra_churn`) and a signed **agent component**
+  (`sensitivity * (dissatisfaction - 0.5)`). The three parts (base + price + agent)
+  sum to the total exactly, per run.
+- `quant/formatting.py` — `churn_breakdown_rows(result, price_from_model=...)`
+  returns the 4 lines: base / price (model|assumption) / agent / total.
+- `scripts/run_scenario.py` and `ui/app.py` — compute the two floats via
+  `churn_inputs_or_none`, pass them in, and show a status note (no model /
+  implausible / using model +X%).
+
+**End-to-end check (hostile stance, 12% rise):** base 39.9% + price (model) 6.3% +
+agent +2.7% = **48.9%** total — additive as designed.
+
+**Tests:** +data/train/predict/quant/formatting tests. Full suite **151 passed**,
+`ruff` clean. Docs: `docs/calibration.md` updated with the confounding fix and the
+decision to use the model.
+
 ## 2026-11-05 — Phase 8d: per-customer churn prediction
 
 **Goal:** Turn the trained model into calibrated, per-customer churn estimates

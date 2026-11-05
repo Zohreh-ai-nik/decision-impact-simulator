@@ -214,9 +214,17 @@ class ImpactResult(BaseModel):
         ge=0.0, le=1.0, description="Mean total churn rate after the price rise."
     )
     extra_churn_rate_mean: float = Field(
+        le=1.0,
+        description="Mean extra churn caused by the decision (price change + agent adjustment).",
+    )
+    price_extra_churn_rate_mean: float = Field(
         ge=0.0,
         le=1.0,
-        description="Mean extra churn caused by the decision (total minus baseline).",
+        description="Mean extra churn from the price change alone (model, or fallback assumption).",
+    )
+    agent_adjustment_churn_rate_mean: float = Field(
+        le=1.0,
+        description="Mean churn shift from stakeholder stances; negative if net supportive.",
     )
     lost_customers_mean: float = Field(ge=0.0)
     revenue_impact_mean: float

@@ -77,6 +77,19 @@ def test_train_and_save_end_to_end(tmp_path: Path) -> None:
     assert 0.0 <= result.roc_auc <= 1.0
 
 
+def test_monotonic_hgb_price_effect_never_negative() -> None:
+    """With the constraint on, raising the price can only raise predicted churn."""
+    features = _features()
+    model = train_model(features, "hgb", monotonic=True).pipeline
+    x = features[model.feature_names_in_]
+    old = model.predict_proba(x)[:, 1]
+    raised = x.copy()
+    for col in ("price_change", "price_vs_market", "price_vs_technical"):
+        raised[col] = (1.0 + raised[col]) * 1.12 - 1.0
+    new = model.predict_proba(raised)[:, 1]
+    assert (new >= old - 1e-9).all()
+
+
 def test_tracking_disabled_is_noop_context() -> None:
     with start_run("x", enabled=False) as logger:
         logger.log_params({"a": 1})

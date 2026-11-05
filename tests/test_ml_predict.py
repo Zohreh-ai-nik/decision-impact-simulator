@@ -16,11 +16,13 @@ from decision_sim.ml.predict import (
     FCA_BASE_CHURN,
     apply_price_increase,
     build_portfolio,
+    churn_inputs_from_model,
+    churn_inputs_or_none,
     predict_base_churn,
     predict_price_effect,
     rescale_to_base,
 )
-from decision_sim.ml.train import train_model
+from decision_sim.ml.train import save_model, train_model
 
 FIXTURE = Path(__file__).parent / "fixtures" / "eudirectlapse_tiny.csv"
 
@@ -115,3 +117,60 @@ def test_predict_price_effect_shape_and_zero(model, features) -> None:
     assert effect.shape == (40,)
     zero_effect = predict_price_effect(model, portfolio, 0.0)
     assert np.allclose(zero_effect, 0.0)
+
+
+# --- churn_inputs_from_model (bridge to the quant layer) -------------------
+
+
+def test_churn_inputs_returns_base_near_fca(model, features) -> None:
+    base, _price = churn_inputs_from_model(
+        model, features, price_increase_pct=12.0, base_churn=FCA_BASE_CHURN, n=200
+    )
+    assert base == pytest.approx(FCA_BASE_CHURN, abs=1e-3)
+
+
+def test_churn_inputs_price_is_none_or_within_cap(model, features) -> None:
+    _base, price = churn_inputs_from_model(
+        model, features, price_increase_pct=12.0, max_extra_churn=0.15, n=200
+    )
+    assert price is None or (0.0 <= price <= 0.15)
+
+
+def test_churn_inputs_implausible_returns_none(model, features) -> None:
+    """A huge min_plausible threshold forces the fallback signal."""
+    _base, price = churn_inputs_from_model(
+        model, features, price_increase_pct=12.0, n=200, min_plausible=0.99
+    )
+    assert price is None
+
+
+def test_churn_inputs_or_none_without_model_returns_nones(tmp_path) -> None:
+    base, price = churn_inputs_or_none(
+        price_increase_pct=12.0,
+        model_path=tmp_path / "missing.joblib",
+        data_path=FIXTURE,
+    )
+    assert base is None and price is None
+
+
+def test_churn_inputs_or_none_without_data_returns_nones(tmp_path, model) -> None:
+    model_path = tmp_path / "m.joblib"
+    save_model(model, model_path)
+    base, price = churn_inputs_or_none(
+        price_increase_pct=12.0,
+        model_path=model_path,
+        data_path=tmp_path / "no_data.parquet",
+    )
+    assert base is None and price is None
+
+
+def test_churn_inputs_or_none_with_model_and_data(tmp_path, model) -> None:
+    model_path = tmp_path / "m.joblib"
+    save_model(model, model_path)
+    base, _price = churn_inputs_or_none(
+        price_increase_pct=12.0,
+        model_path=model_path,
+        data_path=FIXTURE,
+        n=200,
+    )
+    assert base == pytest.approx(FCA_BASE_CHURN, abs=1e-3)

@@ -18,6 +18,8 @@ A fictional portfolio is built by seeded resampling of dataset rows.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
@@ -31,6 +33,7 @@ FCA_BASE_CHURN = 0.40
 _PRICE_LEVEL = "prem_final"
 _PRICE_CHANGE = "price_change"
 _PRICE_VS_MARKET = "price_vs_market"
+_PRICE_VS_TECHNICAL = "price_vs_technical"
 
 
 def build_portfolio(features: pd.DataFrame, n: int, *, seed: int = 7) -> pd.DataFrame:
@@ -97,15 +100,17 @@ def predict_base_churn(
 def apply_price_increase(portfolio: pd.DataFrame, price_increase_pct: float) -> pd.DataFrame:
     """Return a copy of the portfolio with the premium raised by the given %.
 
-    Raises ``prem_final`` and recomputes the price ratios. ``prem_last`` and
-    ``prem_market`` are unchanged by a renewal price rise, so the ratios scale as
-    ``(1 + old_ratio) * (1 + f) - 1`` where ``f`` is the fractional increase.
+    Raises ``prem_final`` and recomputes the price ratios. ``prem_last``,
+    ``prem_market`` and ``prem_pure`` are unchanged by a renewal price rise, so
+    the ratios scale as ``(1 + old_ratio) * (1 + f) - 1`` where ``f`` is the
+    fractional increase.
     """
     out = portfolio.copy()
     factor = 1.0 + price_increase_pct / 100.0
     out[_PRICE_LEVEL] = out[_PRICE_LEVEL] * factor
     out[_PRICE_CHANGE] = (1.0 + out[_PRICE_CHANGE]) * factor - 1.0
     out[_PRICE_VS_MARKET] = (1.0 + out[_PRICE_VS_MARKET]) * factor - 1.0
+    out[_PRICE_VS_TECHNICAL] = (1.0 + out[_PRICE_VS_TECHNICAL]) * factor - 1.0
     return out
 
 
@@ -122,10 +127,87 @@ def predict_price_effect(
     return new - old
 
 
+def churn_inputs_from_model(
+    model: Pipeline,
+    features: pd.DataFrame,
+    *,
+    price_increase_pct: float,
+    base_churn: float = FCA_BASE_CHURN,
+    max_extra_churn: float = 0.15,
+    n: int = 5000,
+    seed: int = 7,
+    min_plausible: float = 0.005,
+) -> tuple[float, float | None]:
+    """Collapse the model into the two scalars the Monte Carlo layer consumes.
+
+    Builds a seeded portfolio, then returns ``(base, price_extra)`` where:
+
+    * ``base`` is the model's mean base churn, rescaled to the UK base (so it
+      equals ``base_churn`` by construction; it carries the model provenance).
+    * ``price_extra`` is the mean per-customer extra churn from the price rise,
+      each customer clipped to ``[0, max_extra_churn]``. It is returned only if
+      the **raw** mean effect is positive and the clipped mean clears
+      ``min_plausible``; otherwise ``None`` signals the caller to fall back to the
+      labelled assumption.
+
+    Keeping this bridge in terms of plain floats (not a ``BusinessContext``) keeps
+    the quantitative layer decoupled from the ML layer.
+    """
+    portfolio = build_portfolio(features, n, seed=seed)
+    base = float(predict_base_churn(model, portfolio, base=base_churn).mean())
+
+    effect = predict_price_effect(model, portfolio, price_increase_pct)
+    price_extra = float(np.clip(effect, 0.0, max_extra_churn).mean())
+    plausible = float(effect.mean()) > 0.0 and price_extra >= min_plausible
+    return base, (price_extra if plausible else None)
+
+
+def churn_inputs_or_none(
+    *,
+    price_increase_pct: float,
+    base_churn: float = FCA_BASE_CHURN,
+    max_extra_churn: float = 0.15,
+    model_path: str | Path | None = None,
+    data_path: str | Path | None = None,
+    n: int = 5000,
+    seed: int = 7,
+) -> tuple[float | None, float | None]:
+    """Load the saved model + dataset and return the two Monte Carlo churn inputs.
+
+    Returns ``(None, None)`` when no trained model or no prepared dataset is
+    present, so callers can transparently fall back to the FCA constant and the
+    labelled assumption. Otherwise defers to :func:`churn_inputs_from_model`.
+    """
+    # Imported lazily so the pure prediction helpers above carry no I/O imports.
+    from decision_sim.ml.data import DEFAULT_DATA_PATH, prepare
+    from decision_sim.ml.train import DEFAULT_MODEL_PATH, load_model
+
+    data_path = Path(data_path) if data_path is not None else DEFAULT_DATA_PATH
+    try:
+        model = load_model(model_path or DEFAULT_MODEL_PATH)
+    except FileNotFoundError:
+        return None, None
+    if not Path(data_path).exists():
+        return None, None
+
+    features = prepare(data_path)
+    return churn_inputs_from_model(
+        model,
+        features,
+        price_increase_pct=price_increase_pct,
+        base_churn=base_churn,
+        max_extra_churn=max_extra_churn,
+        n=n,
+        seed=seed,
+    )
+
+
 __all__ = [
     "FCA_BASE_CHURN",
     "apply_price_increase",
     "build_portfolio",
+    "churn_inputs_from_model",
+    "churn_inputs_or_none",
     "predict_base_churn",
     "predict_price_effect",
     "rescale_to_base",

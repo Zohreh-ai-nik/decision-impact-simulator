@@ -12,6 +12,7 @@ import sys
 
 from dotenv import load_dotenv
 
+from decision_sim.ml.predict import churn_inputs_or_none
 from decision_sim.quant.formatting import (
     churn_assumption_text,
     churn_breakdown_rows,
@@ -41,12 +42,35 @@ def main(name: str) -> None:
     for agent, stance in sorted(stances.items()):
         print(f"  {agent:<22} score={stance.score:+.2f}  confidence={stance.confidence:.2f}")
 
-    result = simulate_impact(stances, scenario.business, MonteCarloConfig())
+    business = scenario.business
+    model_base, model_price = churn_inputs_or_none(
+        price_increase_pct=business.price_increase_pct,
+        base_churn=business.base_churn,
+        max_extra_churn=business.max_extra_churn,
+    )
+    price_from_model = model_price is not None
+    if model_base is None:
+        print("\n[churn] No trained model found - using FCA base + labelled assumption.")
+    elif not price_from_model:
+        print(
+            "\n[churn] Model loaded, but its price effect was implausible - "
+            "using the labelled assumption for the price-change line."
+        )
+    else:
+        print(f"\n[churn] Using model price effect: {model_price:.1%} extra churn.")
 
-    print("\n" + churn_assumption_text(scenario.business))
+    result = simulate_impact(
+        stances,
+        business,
+        MonteCarloConfig(),
+        model_base_churn=model_base,
+        model_price_extra_churn=model_price,
+    )
+
+    print("\n" + churn_assumption_text(business))
     print("\nChurn breakdown:")
-    for label, value in churn_breakdown_rows(result):
-        print(f"  {label:<40} {value}")
+    for label, value in churn_breakdown_rows(result, price_from_model=price_from_model):
+        print(f"  {label:<48} {value}")
 
     print("\nImpact summary:")
     for label, value in impact_summary_rows(result):

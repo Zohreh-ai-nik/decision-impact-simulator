@@ -70,12 +70,29 @@ def churn_assumption_text(business: BusinessContext) -> str:
     )
 
 
-def churn_breakdown_rows(result: ImpactResult) -> list[tuple[str, str]]:
-    """Return the three churn lines: UK base, decision-caused extra, and total."""
+def churn_breakdown_rows(
+    result: ImpactResult, *, price_from_model: bool = True
+) -> list[tuple[str, str]]:
+    """Return the four churn lines: UK base, price-change extra, agent, total.
+
+    Args:
+        result: The Monte Carlo result to summarise.
+        price_from_model: Whether the price-change extra came from the trained
+            model (labelled "model") or the labelled fallback assumption.
+    """
+    price_source = "model" if price_from_model else "assumption"
+    agent = result.agent_adjustment_churn_rate_mean
     return [
-        ("UK base churn (FCA)", f"{result.baseline_churn_rate_mean:.1%}"),
-        ("Extra churn caused by the decision", f"{result.extra_churn_rate_mean:.1%}"),
-        ("Total churn", f"{result.churn_rate_mean:.1%}"),
+        (
+            "UK base churn (FCA, adjusted by customer type)",
+            f"{result.baseline_churn_rate_mean:.1%}",
+        ),
+        (
+            f"Extra churn from price change ({price_source})",
+            f"{result.price_extra_churn_rate_mean:.1%}",
+        ),
+        ("Agent adjustment", f"{agent:+.1%}"),
+        ("Total", f"{result.churn_rate_mean:.1%}"),
     ]
 
 
@@ -109,7 +126,8 @@ def impact_summary_rows(result: ImpactResult) -> list[tuple[str, str]]:
             f"({format_pct_change(result.revenue_impact_pct_p90)})",
         ),
         ("Baseline churn rate (no price rise)", f"{result.baseline_churn_rate_mean:.2%}"),
-        ("Extra churn caused by the decision", f"{result.extra_churn_rate_mean:.2%}"),
+        ("Extra churn from price change", f"{result.price_extra_churn_rate_mean:.2%}"),
+        ("Agent adjustment", f"{result.agent_adjustment_churn_rate_mean:+.2%}"),
         ("Mean total churn rate", f"{result.churn_rate_mean:.2%}"),
         ("Mean lost customers", _count(result.lost_customers_mean)),
         ("Monte Carlo runs", f"{result.n_runs:,}"),

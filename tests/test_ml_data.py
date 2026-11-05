@@ -84,6 +84,23 @@ def test_build_features_adds_price_ratios() -> None:
     assert features.iloc[0]["price_change"] == pytest.approx(expected_change)
 
 
+def test_build_features_adds_price_vs_technical() -> None:
+    cleaned = clean(_raw())
+    features = build_features(cleaned)
+    assert "price_vs_technical" in features.columns
+    first = cleaned.iloc[0]
+    expected = first["prem_final"] / first["prem_pure"] - 1.0
+    assert features.iloc[0]["price_vs_technical"] == pytest.approx(expected)
+
+
+def test_clean_drops_nonpositive_technical_premium() -> None:
+    df = _raw()
+    df.loc[0, "prem_pure"] = 0.0
+    cleaned = clean(df)
+    assert len(cleaned) == len(df) - 1
+    assert (cleaned["prem_pure"] > 0).all()
+
+
 def test_build_features_keeps_only_target_and_features() -> None:
     features = build_features(clean(_raw()))
     assert list(features.columns) == [TARGET, *FEATURES]
