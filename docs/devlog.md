@@ -2,6 +2,42 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 8c: churn model training, evaluation and EDA
+
+**Goal:** Train the churn model on `eudirectlapse`, evaluate it honestly, and
+document the price-change confounding before wiring the model into the simulator.
+
+**What changed:**
+- `src/decision_sim/ml/train.py` — a preprocessing + estimator `Pipeline` for a
+  `LogisticRegression` baseline and a `HistGradientBoostingClassifier` main model
+  (dense one-hot for the tree, which rejects sparse input). Stratified split
+  (seed 7), ROC AUC + Brier, `save_model`/`load_model` (joblib), `train_and_save`.
+- `src/decision_sim/ml/tracking.py` — a thin, **optional** MLflow logger: a
+  `start_run` context manager that uses MLflow if installed and enabled, else a
+  no-op. Tests never need MLflow. Full tracking is deferred to Phase 12.
+- `scripts/train_churn.py` — trains both models on `data/raw/`, prints metrics,
+  saves the HGB model to `models/` (now git-ignored).
+- `notebooks/01_churn_eda.ipynb` — lapse by age, tenure, number of policies, price
+  change and price-vs-market, plus an honest write-up of the confounding.
+- `tests/test_ml_train.py` — 9 offline tests (metrics in range, determinism,
+  save/load round-trip, missing-model error, no-op tracking, MLflow-absent
+  fallback), all on the tiny fixture.
+- `.gitignore` — added `models/`, `mlruns/`, `mlartifacts/`.
+
+**Real results (23,060 rows, 25% hold-out, seed 7):**
+- LogReg: ROC AUC **0.624**, Brier **0.110**. HGB: ROC AUC **0.620**, Brier
+  **0.109**. Modest — churn is genuinely hard here.
+- **Confounding confirmed:** price *cut* → ~16% lapse; price *10%+ rise* → ~10%
+  lapse; `corr(price_change, lapse) ≈ -0.02`. Bigger rises go to stickier
+  customers. Clean, monotonic signals do exist for age (<30 ~17% vs 60+ ~9%) and
+  tenure (6+ years ~8% vs 1-2 years ~15%).
+- **Decision:** keep the labelled `max_extra_churn` assumption (0.15) as the
+  fallback and upper bound for price-driven extra churn; use the model's
+  price-delta only if positive/plausible (wired in 8d/8e).
+
+**Results:** `ruff check` clean; `pytest -q` → 125 passed. Dataset and model stay
+git-ignored.
+
 ## 2026-11-05 — Phase 8a/8b: churn dataset + feature engineering
 
 **Goal:** Start the real churn model. Acquire the public `eudirectlapse` dataset

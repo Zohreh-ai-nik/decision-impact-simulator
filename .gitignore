@@ -1,6 +1,11 @@
 # Data (never commit)
 data/
 
+# Trained models and experiment tracking (never commit)
+models/
+mlruns/
+mlartifacts/
+
 # Environment
 .env
 
