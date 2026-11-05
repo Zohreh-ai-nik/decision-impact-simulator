@@ -14,10 +14,12 @@ from __future__ import annotations
 import json
 import random
 import re
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
+import pandas as pd
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict
 
@@ -277,8 +279,16 @@ def run_simulation(
     """Run a full simulation and optionally persist it to ``data/runs/``."""
     config = config or SimConfig()
     app = build_graph(config)
+    final: SimState = app.invoke(
+        _initial_state(scenario), {"recursion_limit": _step_limit(scenario, config)}
+    )
+    if save:
+        save_run(final)
+    return final
 
-    initial: SimState = {
+
+def _initial_state(scenario: Scenario) -> SimState:
+    return {
         "scenario": scenario,
         "stage_index": 0,
         "round": 1,
@@ -288,10 +298,54 @@ def run_simulation(
         "rounds_executed": 0,
     }
 
-    total_rounds = sum(s.rounds for s in scenario.stages)
-    step_limit = min(config.max_rounds, total_rounds) + 5
-    final: SimState = app.invoke(initial, {"recursion_limit": step_limit})
 
-    if save:
-        save_run(final)
-    return final
+def _step_limit(scenario: Scenario, config: SimConfig) -> int:
+    total_rounds = sum(s.rounds for s in scenario.stages)
+    return min(config.max_rounds, total_rounds) + 5
+
+
+def iter_simulation(
+    scenario: Scenario,
+    config: SimConfig | None = None,
+) -> Iterator[SimState]:
+    """Yield the simulation state after each round, for incremental UIs.
+
+    Unlike :func:`run_simulation`, this does not save the run; the caller can
+    persist the final state with :func:`save_run` if desired.
+    """
+    config = config or SimConfig()
+    app = build_graph(config)
+    for update in app.stream(
+        _initial_state(scenario),
+        {"recursion_limit": _step_limit(scenario, config)},
+        stream_mode="values",
+    ):
+        # The first streamed value is the initial state (round 0 executed).
+        if update["rounds_executed"] > 0:
+            yield update
+
+
+def stances_dataframe(stances: list[StanceRecord]) -> pd.DataFrame:
+    """Build a tidy DataFrame of stance scores over time, per agent.
+
+    Columns: ``agent``, ``stage``, ``round``, ``global_round`` (a per-agent
+    sequential turn index) and ``score``.
+    """
+    columns = ["agent", "stage", "round", "global_round", "score"]
+    if not stances:
+        return pd.DataFrame(columns=columns)
+
+    rows = []
+    turn_by_agent: dict[str, int] = {}
+    for record in stances:
+        turn_by_agent[record.agent] = turn_by_agent.get(record.agent, 0) + 1
+        rows.append(
+            {
+                "agent": record.agent,
+                "stage": record.stage,
+                "round": record.round,
+                "global_round": turn_by_agent[record.agent],
+                "score": record.stance.score,
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
