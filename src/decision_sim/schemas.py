@@ -9,11 +9,39 @@ communication topology (:class:`Channel`), the messages exchanged
 
 from __future__ import annotations
 
+import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AgentType = Literal["person", "organisation", "group"]
+
+
+class Source(BaseModel):
+    """Provenance for a single real fact: where it came from."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, description="Link to the source document.")
+    title: str = Field(min_length=1)
+    date: datetime.date | None = Field(default=None, description="Publication date, if known.")
+    snippet: str = Field(default="", description="The quoted passage this source backs.")
+
+    @field_validator("url")
+    @classmethod
+    def _check_url(cls, value: str) -> str:
+        if not value.startswith(("http://", "https://")):
+            raise ValueError(f"url must start with http:// or https://, got {value!r}.")
+        return value
+
+
+class Evidence(BaseModel):
+    """A retrieved or ingested chunk of content with its supporting sources."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, description="The evidence content.")
+    sources: list[Source] = Field(min_length=1)
 
 
 class AgentProfile(BaseModel):
@@ -27,6 +55,9 @@ class AgentProfile(BaseModel):
     goals: list[str] = Field(default_factory=list)
     concerns: list[str] = Field(default_factory=list)
     style: str = Field(default="", description="How this agent tends to communicate.")
+    sources: list[Source] = Field(
+        default_factory=list, description="Evidence this profile was grounded in."
+    )
 
 
 class Stage(BaseModel):
@@ -59,6 +90,9 @@ class Post(BaseModel):
     stage: str = Field(min_length=1)
     round: int = Field(ge=1)
     text: str = Field(min_length=1)
+    sources: list[Source] = Field(
+        default_factory=list, description="Sources this message cites."
+    )
 
 
 class Stance(BaseModel):
@@ -72,6 +106,9 @@ class Stance(BaseModel):
     likely_action: str = Field(min_length=1)
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str = Field(min_length=1)
+    sources: list[Source] = Field(
+        default_factory=list, description="Sources behind this reasoning."
+    )
 
 
 class Signal(BaseModel):

@@ -2,6 +2,25 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 1: provenance schemas (Source + Evidence)
+
+**Goal:** Lay the foundation for the intelligence layer — a provenance vocabulary
+so every real fact can carry where it came from. Nothing is populated yet; this
+is just the plumbing that Phases 2–7 fill in.
+
+**What changed:**
+- `schemas.py` — new `Source` (url validated to start with http(s), title, optional
+  `date`, snippet) and `Evidence` (text + >=1 `Source`). Added a non-breaking
+  `sources: list[Source] = []` to `AgentProfile`, `Post` and `Stance` so messages
+  and reasoning can cite evidence later. `date` imported as `datetime.date` to
+  avoid shadowing the field named `date`.
+- `tests/test_sources.py` — URL validation, optional date/snippet, JSON round-trip
+  preserving the date, `Evidence` requires >=1 source, and back-compat (existing
+  models still validate with no `sources`).
+
+**Results:** `ruff check` clean; `pytest -q` → 100 passed. Fully offline, no new
+dependencies.
+
 ## 2026-11-05 — Recalibrated churn, parameter uncertainty and no-rise baseline
 
 **Problem:** The first quant model gave ~40.8% churn from a 12% price rise (churn
