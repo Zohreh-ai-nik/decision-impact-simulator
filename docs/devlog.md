@@ -2,6 +2,37 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Analysis layer (`analysis/`: coalitions + influence)
+
+**Goal:** Add "who aligns with whom" (coalitions) and "who is most influential"
+(influence ranking) on top of the simulation output.
+
+**What changed:**
+- `src/decision_sim/analysis/coalitions.py` — `final_scores(...)` and
+  `detect_coalitions(agent_stances, threshold)`: links same-side agents whose
+  final stance scores are within `threshold`, returns connected components
+  (NetworkX), sorted deterministically.
+- `src/decision_sim/analysis/influence.py` — `build_interaction_graph(posts,
+  scenario)` builds a reach-weighted information-flow graph (poster -> every
+  reader of the channel); `influence_ranking(...)` runs a pure-Python
+  power-iteration PageRank on the *reversed* graph so agents read by many score
+  highest. `Breaking News` is excluded.
+- `src/decision_sim/analysis/__init__.py` — package exports.
+- `tests/test_analysis.py` — 11 tests: coalition grouping/threshold/opposition,
+  influence ordering, public-vs-private reach, Breaking News exclusion, empty
+  case.
+
+**Design choices:**
+- `analysis/` depends only on `schemas` + NetworkX (no `simulation`/`ui`),
+  matching the decoupled `quant/` approach.
+- Implemented PageRank by hand (power iteration) to avoid pulling in SciPy, which
+  `nx.pagerank` now requires. Edge direction: `build_interaction_graph` models
+  information flow (poster -> reader); influence reverses it so "read by
+  influential agents" raises your score.
+
+**Commands:** `ruff check src tests`, `pytest -q`.
+**Result:** 63 tests pass, lint clean.
+
 ## 2026-11-05 — Impact in the UI (`quant/formatting` + Streamlit)
 
 **Goal:** Show the quantified impact at the end of a run in the Streamlit app.
