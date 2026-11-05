@@ -41,11 +41,14 @@ class FakeLLM:
     """Drop-in replacement for ``litellm.completion`` used in tests.
 
     Returns each queued string as a completion response in order, recording the
-    arguments of every call for later assertions.
+    arguments of every call for later assertions. If the queue is empty and a
+    ``default`` is set, that value is returned for every further call -- handy
+    for round-based simulations that make many identical requests.
     """
 
     responses: list[str] = field(default_factory=list)
     calls: list[_Call] = field(default_factory=list)
+    default: str | None = None
 
     def queue(self, *contents: str) -> FakeLLM:
         """Append one or more response bodies to the queue."""
@@ -69,9 +72,13 @@ class FakeLLM:
                 response_format=response_format,
             )
         )
-        if not self.responses:
+        if self.responses:
+            content = self.responses.pop(0)
+        elif self.default is not None:
+            content = self.default
+        else:
             raise AssertionError("FakeLLM called more times than responses were queued.")
-        return _Response(choices=[_Choice(message=_Message(content=self.responses.pop(0)))])
+        return _Response(choices=[_Choice(message=_Message(content=content))])
 
 
 @pytest.fixture
