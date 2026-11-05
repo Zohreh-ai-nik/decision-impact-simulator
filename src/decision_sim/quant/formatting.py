@@ -62,11 +62,21 @@ def _count(value: float) -> str:
 def churn_assumption_text(business: BusinessContext) -> str:
     """Describe the churn assumptions used, for display next to the results."""
     return (
-        f"Churn assumption: base churn {business.base_churn:.1%} "
-        f"(±{business.base_churn_sd * 100:.1f}pp) plus up to "
-        f"{business.max_extra_churn * 100:.1f}pp extra from negative customer stance "
-        f"(±{business.max_extra_churn_sd * 100:.1f}pp)."
+        f"UK base churn (FCA): {business.base_churn:.0%} "
+        f"(±{business.base_churn_sd * 100:.0f}pp, clipped to "
+        f"{business.base_churn_min:.0%}–{business.base_churn_max:.0%}). "
+        f"Extra churn from a hostile stance: up to {business.max_extra_churn * 100:.0f}pp "
+        f"— ASSUMPTION, not yet sourced (refined in Phase 8)."
     )
+
+
+def churn_breakdown_rows(result: ImpactResult) -> list[tuple[str, str]]:
+    """Return the three churn lines: UK base, decision-caused extra, and total."""
+    return [
+        ("UK base churn (FCA)", f"{result.baseline_churn_rate_mean:.1%}"),
+        ("Extra churn caused by the decision", f"{result.extra_churn_rate_mean:.1%}"),
+        ("Total churn", f"{result.churn_rate_mean:.1%}"),
+    ]
 
 
 def impact_summary_rows(result: ImpactResult) -> list[tuple[str, str]]:
@@ -99,7 +109,8 @@ def impact_summary_rows(result: ImpactResult) -> list[tuple[str, str]]:
             f"({format_pct_change(result.revenue_impact_pct_p90)})",
         ),
         ("Baseline churn rate (no price rise)", f"{result.baseline_churn_rate_mean:.2%}"),
-        ("Mean churn rate", f"{result.churn_rate_mean:.2%}"),
+        ("Extra churn caused by the decision", f"{result.extra_churn_rate_mean:.2%}"),
+        ("Mean total churn rate", f"{result.churn_rate_mean:.2%}"),
         ("Mean lost customers", _count(result.lost_customers_mean)),
         ("Monte Carlo runs", f"{result.n_runs:,}"),
     ]

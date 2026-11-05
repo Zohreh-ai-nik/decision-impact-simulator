@@ -19,6 +19,7 @@ from decision_sim.analysis.report import build_report
 from decision_sim.config import SimConfig
 from decision_sim.quant.formatting import (
     churn_assumption_text,
+    churn_breakdown_rows,
     format_gbp_millions,
     format_pct_change,
     impact_histogram,
@@ -76,6 +77,12 @@ def _render_impact(scenario: Scenario, stances) -> None:
 
     st.subheader("Estimated impact (vs. no price rise)")
     st.caption(churn_assumption_text(scenario.business))
+
+    st.markdown("**Churn breakdown**")
+    churn_cols = st.columns(3)
+    for col, (label, value) in zip(churn_cols, churn_breakdown_rows(result), strict=True):
+        col.metric(label, value)
+
     cols = st.columns(3)
     cols[0].metric(
         "Median (p50)",

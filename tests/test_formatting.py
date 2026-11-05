@@ -6,6 +6,7 @@ import pytest
 
 from decision_sim.quant.formatting import (
     churn_assumption_text,
+    churn_breakdown_rows,
     format_gbp,
     format_gbp_millions,
     format_pct_change,
@@ -20,8 +21,9 @@ def _result(samples: list[float]) -> ImpactResult:
         n_runs=len(samples) or 1,
         baseline_revenue=1_000_000.0,
         new_annual_premium=728.0,
-        baseline_churn_rate_mean=0.08,
-        churn_rate_mean=0.12,
+        baseline_churn_rate_mean=0.40,
+        churn_rate_mean=0.52,
+        extra_churn_rate_mean=0.12,
         lost_customers_mean=6000.0,
         revenue_impact_mean=-50_000.0,
         revenue_impact_std=10_000.0,
@@ -81,8 +83,23 @@ def test_summary_rows_contain_key_metrics() -> None:
     rows = dict(impact_summary_rows(_result([1.0, 2.0, 3.0])))
     assert "Mean revenue impact" in rows
     assert "Revenue impact (p50)" in rows
-    assert rows["Mean churn rate"] == "12.00%"
-    assert rows["Baseline churn rate (no price rise)"] == "8.00%"
+    assert rows["Mean total churn rate"] == "52.00%"
+    assert rows["Baseline churn rate (no price rise)"] == "40.00%"
+    assert rows["Extra churn caused by the decision"] == "12.00%"
+
+
+def test_churn_breakdown_three_lines() -> None:
+    rows = churn_breakdown_rows(_result([1.0]))
+    labels = [label for label, _ in rows]
+    assert labels == [
+        "UK base churn (FCA)",
+        "Extra churn caused by the decision",
+        "Total churn",
+    ]
+    values = dict(rows)
+    assert values["UK base churn (FCA)"] == "40.0%"
+    assert values["Extra churn caused by the decision"] == "12.0%"
+    assert values["Total churn"] == "52.0%"
 
 
 def test_summary_rows_show_pounds_and_percent() -> None:
@@ -97,13 +114,15 @@ def test_churn_assumption_text_states_parameters() -> None:
         annual_premium=500.0,
         price_increase_pct=12.0,
         customer_groups=[CustomerGroup(name="G", agent="A", share=1.0)],
-        base_churn=0.08,
-        base_churn_sd=0.02,
+        base_churn=0.40,
+        base_churn_sd=0.03,
+        base_churn_min=0.33,
+        base_churn_max=0.54,
         max_extra_churn=0.15,
         max_extra_churn_sd=0.04,
     )
     text = churn_assumption_text(business)
-    assert "8.0%" in text
-    assert "15.0pp" in text
-    assert "2.0pp" in text
-    assert "4.0pp" in text
+    assert "40%" in text
+    assert "33%–54%" in text
+    assert "15pp" in text
+    assert "ASSUMPTION" in text

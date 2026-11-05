@@ -141,22 +141,37 @@ class BusinessContext(BaseModel):
     price_increase_pct: float = Field(description="Percentage change applied to the premium.")
     customer_groups: list[CustomerGroup] = Field(min_length=1)
     base_churn: float = Field(
-        default=0.08,
+        default=0.40,
         ge=0.0,
         le=1.0,
-        description="Annual churn that happens anyway, with no price rise.",
+        description="Churn that happens anyway with no price rise (UK motor ~40%, FCA EP25/2).",
     )
     base_churn_sd: float = Field(
-        default=0.02, ge=0.0, description="Uncertainty (std dev) on base churn."
+        default=0.03, ge=0.0, description="Uncertainty (std dev) on base churn."
+    )
+    base_churn_min: float = Field(
+        default=0.33,
+        ge=0.0,
+        le=1.0,
+        description="Lower clip for sampled base churn (FCA motor with-autorenewal floor).",
+    )
+    base_churn_max: float = Field(
+        default=0.54,
+        ge=0.0,
+        le=1.0,
+        description="Upper clip for sampled base churn (FCA motor without-autorenewal ceiling).",
     )
     max_extra_churn: float = Field(
         default=0.15,
         ge=0.0,
         le=1.0,
-        description="Extra churn added when a customer group is fully hostile.",
+        description="ASSUMPTION (unsourced): extra churn when a group is fully hostile.",
     )
     max_extra_churn_sd: float = Field(
         default=0.04, ge=0.0, description="Uncertainty (std dev) on the extra-churn cap."
+    )
+    sources: list[Source] = Field(
+        default_factory=list, description="Citations for the churn calibration."
     )
 
     @model_validator(mode="after")
@@ -167,6 +182,12 @@ class BusinessContext(BaseModel):
             if name in seen:
                 raise ValueError(f"Duplicate customer group name: {name!r}.")
             seen.add(name)
+
+        if self.base_churn_min > self.base_churn_max:
+            raise ValueError(
+                f"base_churn_min ({self.base_churn_min}) exceeds "
+                f"base_churn_max ({self.base_churn_max})."
+            )
 
         total_share = sum(g.share for g in self.customer_groups)
         if total_share > 1.0 + 1e-9:
@@ -190,7 +211,12 @@ class ImpactResult(BaseModel):
         ge=0.0, le=1.0, description="Mean churn rate with no price rise (base churn only)."
     )
     churn_rate_mean: float = Field(
-        ge=0.0, le=1.0, description="Mean churn rate after the price rise."
+        ge=0.0, le=1.0, description="Mean total churn rate after the price rise."
+    )
+    extra_churn_rate_mean: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Mean extra churn caused by the decision (total minus baseline).",
     )
     lost_customers_mean: float = Field(ge=0.0)
     revenue_impact_mean: float

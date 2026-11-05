@@ -262,9 +262,9 @@ def save_run(state: SimState, out_dir: Path | str = DATA_RUNS_DIR) -> Path:
         "decision": scenario.decision,
         "rounds_executed": state["rounds_executed"],
         "signals_applied": state["signals_applied"],
-        "scenario": scenario.model_dump(),
-        "posts": [p.model_dump() for p in state["posts"]],
-        "stances": [s.model_dump() for s in state["stances"]],
+        "scenario": scenario.model_dump(mode="json"),
+        "posts": [p.model_dump(mode="json") for p in state["posts"]],
+        "stances": [s.model_dump(mode="json") for s in state["stances"]],
     }
     file_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return file_path

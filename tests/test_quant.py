@@ -146,14 +146,14 @@ def test_percentiles_are_ordered() -> None:
 
 
 def test_hostile_churn_stays_within_caps() -> None:
-    business = _business(**_no_uncertainty())  # base 8% + up to 15pp
+    business = _business(**_no_uncertainty())  # base 40% + up to 15pp
     result = simulate_impact(
         {"Customers": _stance(-1.0, 1.0)}, business, MonteCarloConfig(n_runs=300, seed=3)
     )
 
-    # Roughly 23%, i.e. inside the 15-25% band and never near the old 40%.
-    assert 0.15 <= result.churn_rate_mean <= 0.25
-    assert result.baseline_churn_rate_mean == pytest.approx(0.08, abs=0.005)
+    # Roughly 55%, i.e. base 40% plus the full 15pp extra churn cap.
+    assert 0.50 <= result.churn_rate_mean <= 0.60
+    assert result.baseline_churn_rate_mean == pytest.approx(0.40, abs=0.005)
 
 
 def test_extreme_stances_never_exceed_base_plus_cap() -> None:
@@ -297,8 +297,8 @@ def test_multiple_groups_mix_churn() -> None:
     stances = {"Loyal": _stance(1.0, 1.0), "New": _stance(-1.0, 1.0)}
     result = simulate_impact(stances, business, MonteCarloConfig(n_runs=300, seed=5))
 
-    # 8% base for everyone + 15pp extra for the hostile 40% => about 14%.
-    assert result.churn_rate_mean == pytest.approx(0.08 + 0.4 * 0.15, abs=0.01)
+    # 40% base for everyone + 15pp extra for the hostile 40% => about 46%.
+    assert result.churn_rate_mean == pytest.approx(0.40 + 0.4 * 0.15, abs=0.01)
 
 
 def test_ungrouped_customers_churn_at_base_rate_only() -> None:
@@ -308,8 +308,8 @@ def test_ungrouped_customers_churn_at_base_rate_only() -> None:
         {"Customers": _stance(-1.0, 1.0)}, business, MonteCarloConfig(n_runs=300, seed=5)
     )
 
-    # Hostile half adds 15pp * 0.5 on top of the 8% base.
-    assert result.churn_rate_mean == pytest.approx(0.08 + 0.5 * 0.15, abs=0.01)
+    # Hostile half adds 15pp * 0.5 on top of the 40% base.
+    assert result.churn_rate_mean == pytest.approx(0.40 + 0.5 * 0.15, abs=0.01)
 
 
 # --- schema validation ---------------------------------------------------
@@ -350,7 +350,46 @@ def test_bundled_scenario_has_calibrated_business() -> None:
     assert scenario.business.customer_base == 500_000
     assert scenario.business.price_increase_pct == 12.0
     assert scenario.business.customer_groups[0].agent == "Loyal Customers"
-    assert scenario.business.base_churn == 0.08
+    assert scenario.business.base_churn == 0.40
     assert scenario.business.max_extra_churn == 0.15
     assert scenario.business.base_churn_sd > 0.0
     assert scenario.business.max_extra_churn_sd > 0.0
+
+
+def test_bundled_scenario_base_churn_within_fca_bounds() -> None:
+    """Guard against calibration drift: base churn stays inside the FCA subgroup range."""
+    business = load_named("insurer_price_rise").business
+    assert business is not None
+    assert business.base_churn_min <= business.base_churn <= business.base_churn_max
+    assert business.base_churn_min == pytest.approx(0.33)
+    assert business.base_churn_max == pytest.approx(0.54)
+
+
+def test_bundled_scenario_cites_sources() -> None:
+    business = load_named("insurer_price_rise").business
+    assert business is not None
+    assert len(business.sources) >= 1
+    assert any("fca.org.uk" in source.url for source in business.sources)
+
+
+def test_business_rejects_min_above_max() -> None:
+    with pytest.raises(ValidationError):
+        _business(base_churn_min=0.6, base_churn_max=0.4)
+
+
+def test_sampled_base_churn_respects_clip_bounds() -> None:
+    """Even with a huge sd, baseline churn stays within [min, max]."""
+    business = _business(
+        base_churn=0.40,
+        base_churn_sd=0.5,
+        base_churn_min=0.33,
+        base_churn_max=0.54,
+    )
+    result = simulate_impact(
+        {"Customers": _stance(1.0, 1.0)},  # supportive => no extra churn
+        business,
+        MonteCarloConfig(n_runs=2000, seed=12),
+    )
+    # Supportive stance adds no extra churn, so total == baseline, bounded by clips.
+    assert 0.33 - 0.01 <= result.churn_rate_mean <= 0.54 + 0.01
+    assert 0.33 - 0.01 <= result.baseline_churn_rate_mean <= 0.54 + 0.01

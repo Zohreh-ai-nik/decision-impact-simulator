@@ -8,7 +8,8 @@ Model
 -----
 Each run first draws two uncertain parameters from the business context:
 
-* ``base_churn``  ~ Normal(``base_churn``, ``base_churn_sd``), clipped to [0, 1]
+* ``base_churn``  ~ Normal(``base_churn``, ``base_churn_sd``), clipped to
+  ``[base_churn_min, base_churn_max]`` (hard subgroup bounds, not just [0, 1])
 * ``sensitivity`` ~ Normal(``max_extra_churn``, ``max_extra_churn_sd``), clipped to [0, 1]
 
 so the reported percentile range reflects parameter uncertainty and not only
@@ -21,8 +22,9 @@ sampling noise. For every customer group:
   total churn is ``base_churn + sensitivity * dissatisfaction`` and the rest pay
   the *new* premium.
 
-Baseline and scenario share the same baseline leavers (coupled draws), so the
-impact is measured against a like-for-like world.
+Baseline and scenario use **common random numbers**: each run shares the same
+sampled ``base_churn`` and the same baseline leavers, so the revenue impact
+reflects only the effect of the decision, not Monte Carlo noise.
 
 Only agents that represent customer groups (via
 :class:`~decision_sim.schemas.BusinessContext`) influence extra churn. Other
@@ -49,10 +51,16 @@ class MonteCarloConfig(BaseModel):
 
 
 def _sample_bounded(
-    rng: np.random.Generator, mean: float, sd: float, size: int
+    rng: np.random.Generator,
+    mean: float,
+    sd: float,
+    size: int,
+    *,
+    lo: float = 0.0,
+    hi: float = 1.0,
 ) -> np.ndarray:
-    """Draw ``Normal(mean, sd)`` samples clipped to the valid range ``[0, 1]``."""
-    return np.clip(rng.normal(mean, sd, size=size), 0.0, 1.0)
+    """Draw ``Normal(mean, sd)`` samples clipped to ``[lo, hi]``."""
+    return np.clip(rng.normal(mean, sd, size=size), lo, hi)
 
 
 def simulate_impact(
@@ -100,7 +108,14 @@ def simulate_impact(
     if ungrouped > 0:
         segments.append((ungrouped, 0.0))  # no stance signal -> base churn only
 
-    base_churn = _sample_bounded(rng, business.base_churn, business.base_churn_sd, n)
+    base_churn = _sample_bounded(
+        rng,
+        business.base_churn,
+        business.base_churn_sd,
+        n,
+        lo=business.base_churn_min,
+        hi=business.base_churn_max,
+    )
     sensitivity = _sample_bounded(
         rng, business.max_extra_churn, business.max_extra_churn_sd, n
     )
@@ -130,12 +145,16 @@ def simulate_impact(
         impact, baseline_revenue, out=np.zeros_like(impact), where=baseline_revenue > 0
     )
 
+    baseline_churn_rate = baseline_lost / business.customer_base
+    total_churn_rate = scenario_lost / business.customer_base
+
     return ImpactResult(
         n_runs=n,
         baseline_revenue=float(baseline_revenue.mean()),
         new_annual_premium=new_premium,
-        baseline_churn_rate_mean=float((baseline_lost / business.customer_base).mean()),
-        churn_rate_mean=float((scenario_lost / business.customer_base).mean()),
+        baseline_churn_rate_mean=float(baseline_churn_rate.mean()),
+        churn_rate_mean=float(total_churn_rate.mean()),
+        extra_churn_rate_mean=float((total_churn_rate - baseline_churn_rate).mean()),
         lost_customers_mean=float(scenario_lost.mean()),
         revenue_impact_mean=float(impact.mean()),
         revenue_impact_std=float(impact.std()),

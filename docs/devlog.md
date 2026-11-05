@@ -2,6 +2,44 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 7: calibrate base churn to FCA EP25/2, split base/extra/total
+
+**Goal:** Replace the placeholder 8% base churn with a figure grounded in a
+verified public source, and make the UI distinguish churn that happens anyway
+from churn caused by the decision. No numbers were invented; every figure carries
+its quote, URL, publisher and date.
+
+**What changed:**
+- `schemas.py` — `BusinessContext.base_churn` now 0.40 (UK motor attrition, FCA
+  EP25/2 p.44) with a narrow `base_churn_sd` 0.03 and new hard clip bounds
+  `base_churn_min` 0.33 / `base_churn_max` 0.54 (the with-/without-autorenewal
+  subgroups, used as bounds not as uncertainty). `max_extra_churn` kept at 0.15
+  but relabelled an ASSUMPTION. Added `sources: list[Source]` and a validator that
+  rejects `base_churn_min > base_churn_max`. `ImpactResult` gains
+  `extra_churn_rate_mean` (total minus baseline).
+- `quant/monte_carlo.py` — sampled base churn is clipped to `[min, max]`;
+  `_sample_bounded` takes `lo`/`hi`. Baseline and scenario share the same sampled
+  base churn (common random numbers), so revenue impact reflects only the
+  decision. Returns the new extra-churn mean.
+- `quant/formatting.py` — `churn_assumption_text` now states the FCA base, the
+  clip range and the ASSUMPTION label; new `churn_breakdown_rows` returns the
+  three lines (base / extra / total); summary rows renamed to "Mean total churn
+  rate" and add the extra-churn row.
+- `ui/app.py` — results page shows the three churn lines as metrics.
+- `scenarios/insurer_price_rise.yaml` — business block updated to the calibrated
+  values with a `sources:` block (FCA EP25/2 + eudirectlapse) and comments
+  marking the assumption.
+- `docs/calibration.md`, `docs/data.md` — new: the sourcing rationale (verbatim
+  FCA quotes with page numbers; why the subgroup figures are bounds not spread;
+  why the European dataset is patterns-only) and the dataset licence/provenance.
+- `tests/test_quant.py`, `tests/test_formatting.py` — updated churn-level
+  expectations to the 0.40 base; new tests for the clip bounds, `min > max`
+  rejection, the cited sources, the calibration drift-guard, and the three-line
+  breakdown.
+
+**Results:** `ruff check` clean; `pytest -q` → 105 passed. Fully offline, no new
+dependencies.
+
 ## 2026-11-05 — Phase 1: provenance schemas (Source + Evidence)
 
 **Goal:** Lay the foundation for the intelligence layer — a provenance vocabulary

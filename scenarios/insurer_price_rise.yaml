@@ -131,12 +131,33 @@ business:
   customer_base: 500000
   annual_premium: 650.0
   price_increase_pct: 12.0
-  # Churn calibration: total churn = base_churn + up to max_extra_churn from a
-  # hostile customer stance. The *_sd values add parameter uncertainty per run.
-  base_churn: 0.08
-  base_churn_sd: 0.02
+  # Base churn calibrated to UK motor attrition (~40%) from FCA EP25/2 (p.44).
+  # The spread is narrow because the OVERALL rate was stable at 39-40%; the
+  # 33-54% subgroup figures (with / without autorenewal) are used as hard clip
+  # bounds, not as uncertainty on the overall rate. See docs/calibration.md.
+  base_churn: 0.40
+  base_churn_sd: 0.03
+  base_churn_min: 0.33
+  base_churn_max: 0.54
+  # ASSUMPTION - not yet sourced. Extra churn caused by the price rise itself.
+  # To be estimated from the churn model in Phase 8. See docs/calibration.md.
   max_extra_churn: 0.15
   max_extra_churn_sd: 0.04
+  sources:
+    - url: "https://www.fca.org.uk/publication/corporate/ep25-2.pdf"
+      title: "FCA Evaluation Paper 25/2: An evaluation of our GIPP remedies"
+      date: 2025-07-22
+      snippet: >-
+        between 2020 and 2022 ... the motor attrition rate overall rose modestly
+        over the same period from 39% to 40%. ... motor policies ... without
+        autorenewal ... 49%-54%, and those policies with autorenewal ... 33%-35%.
+        (p.44)
+    - url: "https://dutangc.github.io/CASdatasets/reference/eudirectlapse.html"
+      title: "eudirectlapse (CASdatasets): European motor lapse dataset"
+      snippet: >-
+        Secondary source, patterns only (Phase 8): 23,060 renewals, overall lapse
+        ~12.8% derived from the data. European direct insurer, not the UK base
+        level. GPL (>= 2).
   customer_groups:
     - name: "Loyal policyholders"
       agent: "Loyal Customers"
