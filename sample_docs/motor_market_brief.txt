@@ -1,0 +1,40 @@
+MOTOR INSURANCE MARKET BRIEF (FICTIONAL)
+=========================================
+
+This document is fictional and is provided only to demonstrate the Decision
+Impact Simulator. Any resemblance to real companies or figures is coincidental.
+
+Date: 2026-10-30
+Source: Fictional market-intelligence brief
+
+Market conditions
+-----------------
+- Average UK motor premiums rose roughly 8% across the market in the last year.
+- Claims inflation remains the dominant cost pressure, estimated at 12-16%.
+- Three of the five largest insurers have already announced renewal increases of
+  7% to 10% for early 2027.
+- Price-comparison websites now drive over 60% of new motor business, so switching
+  friction is low and headline price matters more than ever.
+
+Customer behaviour
+------------------
+- Roughly 1 in 3 motorists shop around at renewal; this rises sharply once an
+  increase exceeds about 10%.
+- Loyal customers (5+ years) churn far less, but surveys show growing resentment of
+  "loyalty penalty" pricing where long-standing customers pay more than new ones.
+- Low-income drivers are the most price-sensitive and the most likely to reduce
+  cover or drop optional add-ons when premiums rise.
+
+Regulatory context
+------------------
+- The conduct regulator has reaffirmed its fair-value rules and is scrutinising how
+  increases are communicated and justified.
+- Insurers are expected to show that price rises reflect genuine cost increases and
+  do not unfairly target existing customers.
+
+Implications for a 12% rise
+---------------------------
+- A 12% increase sits above the current market pack of 7-10%, creating a visible
+  gap that competitors and the press are likely to highlight.
+- Clear cost justification and targeted retention offers are seen as essential to
+  limit churn and regulatory attention.
