@@ -15,7 +15,9 @@ import pandas as pd
 import streamlit as st
 
 from decision_sim.analysis.activity import activity_dataframe
+from decision_sim.analysis.interview import interview_agent
 from decision_sim.analysis.report import build_report
+from decision_sim.analysis.whatif import run_whatif
 from decision_sim.config import SimConfig
 from decision_sim.intelligence.graph import NetworkxGraphStore, build_graph
 from decision_sim.intelligence.ingest import ingest_uploaded_text
@@ -30,7 +32,7 @@ from decision_sim.quant.formatting import (
 )
 from decision_sim.quant.monte_carlo import simulate_impact
 from decision_sim.scenario import add_signal, list_scenarios, load_scenario
-from decision_sim.schemas import Evidence, Post, Scenario
+from decision_sim.schemas import Evidence, Post, Scenario, Stance
 from decision_sim.simulation.graph import (
     final_stance_by_agent,
     iter_simulation,
@@ -195,6 +197,85 @@ def _render_knowledge_graph(scenario: Scenario, evidence: list[Evidence]) -> Non
         st.dataframe(edges, hide_index=True, use_container_width=True)
 
 
+def _render_interview(scenario: Scenario, posts: list[Post], stances) -> None:
+    """Let the user ask a stakeholder a question, grounded in its own statements."""
+    st.subheader("Interview a stakeholder")
+    agent_stances = final_stance_by_agent(stances)
+    names = [a.name for a in scenario.stakeholders]
+    with st.form("interview_form"):
+        name = st.selectbox("Stakeholder", names, key="interview_agent")
+        question = st.text_input("Question", key="interview_question")
+        submitted = st.form_submit_button("Ask")
+    if not submitted or not question.strip():
+        return
+    agent = next(a for a in scenario.stakeholders if a.name == name)
+    with st.spinner(f"Asking {name}..."):
+        answer, cited = interview_agent(
+            agent, question.strip(), posts, agent_stances.get(name)
+        )
+    st.markdown(f"**{name}:** {answer.answer}")
+    if cited:
+        st.caption("Based on their own statements:")
+        for post in cited:
+            st.caption(f":grey[- ({post.stage} r{post.round}) {post.text}]")
+
+
+def _render_whatif(scenario: Scenario, stances) -> None:
+    """Counterfactual: re-score the impact with a changed customer stance / price."""
+    if scenario.business is None:
+        return
+    st.subheader("What-if")
+    st.caption(
+        "Only customer stances drive churn, so the behavioural lever is a customer "
+        "group's stance. Changing the price moves revenue but not churn in this model."
+    )
+    business = scenario.business
+    agent_stances = final_stance_by_agent(stances)
+    customer_agents = [g.agent for g in business.customer_groups]
+    choosable = [a for a in customer_agents if a in agent_stances]
+    if not choosable:
+        st.info("No customer stances available to vary.")
+        return
+
+    with st.form("whatif_form"):
+        agent = st.selectbox("Customer group agent", choosable)
+        new_score = st.slider(
+            "Their stance (hostile -1 ... +1 supportive)",
+            min_value=-1.0,
+            max_value=1.0,
+            value=float(agent_stances[agent].score),
+            step=0.05,
+        )
+        new_price = st.number_input(
+            "Price increase (%)",
+            value=float(business.price_increase_pct),
+            step=1.0,
+        )
+        submitted = st.form_submit_button("Compare")
+    if not submitted:
+        return
+
+    override: Stance = agent_stances[agent].model_copy(update={"score": new_score})
+    comparison = run_whatif(
+        agent_stances,
+        business,
+        stance_overrides={agent: override},
+        price_increase_pct=new_price,
+    )
+    cols = st.columns(3)
+    cols[0].metric("Baseline impact", format_gbp_millions(comparison.baseline_impact_mean))
+    cols[1].metric(
+        "What-if impact",
+        format_gbp_millions(comparison.variant_impact_mean),
+        format_gbp_millions(comparison.delta_mean),
+    )
+    cols[2].metric(
+        "Churn change",
+        f"{comparison.variant_churn_rate_mean:.1%}",
+        f"{comparison.delta_churn_rate_mean:+.1%}",
+    )
+
+
 
 def main() -> None:
     st.set_page_config(page_title="Decision Impact Simulator", layout="wide")
@@ -276,28 +357,51 @@ def main() -> None:
     posts_area = posts_col.empty()
     chart_area = chart_col.empty()
 
-    if not run:
+    if run:
+        evidence_by_agent = build_evidence_by_agent(scenario, evidence)
+        final_state = None
+        with st.spinner("Running simulation..."):
+            for state in iter_simulation(
+                scenario, config, evidence_by_agent=evidence_by_agent
+            ):
+                final_state = state
+                _render_posts(posts_area, state["posts"])
+                with chart_area.container():
+                    _render_chart(scenario, state["stances"])
+        if final_state is not None:
+            path = save_run(final_state)
+            st.session_state["last_run"] = {
+                "scenario": scenario,
+                "posts": final_state["posts"],
+                "stances": final_state["stances"],
+                "rounds_executed": final_state["rounds_executed"],
+                "evidence": evidence,
+                "saved_to": str(path),
+            }
+
+    last = st.session_state.get("last_run")
+    if last is None:
         posts_col.info("Configure the run in the sidebar, then press **Run**.")
         return
 
-    evidence_by_agent = build_evidence_by_agent(scenario, evidence)
+    run_scenario: Scenario = last["scenario"]
+    posts: list[Post] = last["posts"]
+    stances = last["stances"]
 
-    final_state = None
-    with st.spinner("Running simulation..."):
-        for state in iter_simulation(
-            scenario, config, evidence_by_agent=evidence_by_agent
-        ):
-            final_state = state
-            _render_posts(posts_area, state["posts"])
-            with chart_area.container():
-                _render_chart(scenario, state["stances"])
+    # After a rerun (e.g. from the interview/what-if forms) re-render the posts.
+    if not run:
+        _render_posts(posts_area, posts)
+        with chart_area.container():
+            _render_chart(run_scenario, stances)
 
-    if final_state is not None:
-        path = save_run(final_state)
-        st.success(f"Run complete ({final_state['rounds_executed']} rounds). Saved to {path}")
-        _render_impact(scenario, final_state["stances"])
-        _render_analysis(scenario, final_state["posts"], final_state["stances"])
-        _render_knowledge_graph(scenario, evidence)
+    st.success(
+        f"Run complete ({last['rounds_executed']} rounds). Saved to {last['saved_to']}"
+    )
+    _render_impact(run_scenario, stances)
+    _render_analysis(run_scenario, posts, stances)
+    _render_knowledge_graph(run_scenario, last["evidence"])
+    _render_interview(run_scenario, posts, stances)
+    _render_whatif(run_scenario, stances)
 
 
 if __name__ == "__main__":

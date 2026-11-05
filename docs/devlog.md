@@ -2,6 +2,44 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 9: analysis extras (interview + what-if) and UI wiring
+
+**9a — `analysis/interview.py`:** interview a stakeholder after a run. `interview_agent`
+asks the LLM (injected `ask`) to answer a free-text question in character, grounded
+only in that agent's own posts (numbered fenced REFERENCE DATA block) plus its final
+stance. Returns `InterviewAnswer(answer, cited)` + the resolved cited posts; the
+question is also fenced as data (prompt-injection defence). Excludes other agents and
+the Breaking News pseudo-agent.
+
+**9b — `analysis/whatif.py`:** pure, deterministic counterfactual re-scoring of the
+quant impact (no LLM re-run). `override_stances` (copy, replaces only named existing
+agents), `with_price_increase` (copy), `compare_impacts` -> `WhatIfComparison`,
+`run_whatif` (scores base + variant with the same seed, compares).
+
+**Churn-driver check (per request):** confirmed in `monte_carlo.simulate_impact` that
+only agents named in `business.customer_groups[*].agent` drive churn. A regulator (or
+any non-customer agent) has **no** direct effect on the quant impact — it only matters
+indirectly by shifting customer stances during the LLM run. So the what-if tests
+override a *customer* agent; a test asserts a non-customer override changes nothing.
+Also found and documented a model property: the price-change churn is a fixed
+assumption, not scaled by the size of the rise, so changing the price moves revenue
+but not churn.
+
+**9c — UI wiring (`ui/app.py`):** the finished run is cached in `st.session_state`
+so the new panels survive Streamlit reruns. Added an "Interview a stakeholder" form
+(stakeholder + question -> grounded answer with cited statements) and a "What-if"
+form (vary a customer group's stance and/or the price, shown as baseline vs variant
+metrics).
+
+**Files changed:** `src/decision_sim/analysis/interview.py` (new),
+`src/decision_sim/analysis/whatif.py` (new), `src/decision_sim/ui/app.py`,
+`tests/test_analysis_interview.py` (new, 5), `tests/test_analysis_whatif.py` (new, 8).
+
+**Result:** `ruff check` clean; `pytest -q` → 263 passed, 1 skipped (was 250).
+
+**Next (9d, deferred):** full what-if = checkpoint state per round, rerun the
+simulation from a chosen round with a new signal, and compare the two runs side by side.
+
 ## 2026-11-05 — Phase 8: per-agent memory (Mem0)
 
 **Goal:** give each agent a memory of its *own* prior turns so its stance evolves
