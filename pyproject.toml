@@ -49,6 +49,11 @@ vectorstore = [
 embeddings = [
     "fastembed",
 ]
+# Knowledge graph store. Neo4j is only needed for the full demo (Docker Neo4j);
+# tests and the offline demo use the in-memory networkx backend (a core dep).
+graph = [
+    "neo4j",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/decision_sim"]

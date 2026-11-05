@@ -2,6 +2,40 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 2g: stakeholder knowledge graph
+
+**Goal:** Build a graph of stakeholders and their directed relationships, grounded
+in the same evidence, so later phases can reason about structure (coalitions,
+influence). Offline-testable, with Neo4j only for the full demo.
+
+**Decision on Cognee:** deferred (approved). Cognee pulls heavy deps and
+complicates offline testing; the clean `GraphStore` + networkx/Neo4j backends
+already deliver the graph. Revisit Cognee later only if its auto-extraction earns
+its weight.
+
+**What changed:**
+- `pyproject.toml` — optional `graph = ["neo4j"]` extra (installed in `.venv`).
+- `src/decision_sim/intelligence/graph.py` (new):
+  - `GraphStore` protocol (`add_node`, `add_edge`, `neighbors`, `nodes`, `edges`)
+    with `GraphNode`/`GraphEdge` models.
+  - `NetworkxGraphStore` — in-memory `networkx.DiGraph` (core dep); the default for
+    tests/offline demo; exposes `.graph` for analysis.
+  - `Neo4jGraphStore` — same interface via Cypher MERGE; lazy `neo4j` import;
+    connection from `NEO4J_URI`/`NEO4J_USER`/`NEO4J_PASSWORD` (never logged) or an
+    injected driver.
+  - `extract_relationships(stakeholders, evidence, *, ask=llm.ask)` → `GraphTriple`
+    list, **restricted to known stakeholders** (unknown endpoints dropped). Evidence
+    in a fenced non-executable `REFERENCE DATA` block + safety system prompt.
+  - `build_graph(stakeholders, evidence, store, *, ask)` — adds nodes (from
+    `AgentProfile`s or plain names) and edges from extracted triples.
+- `tests/test_intelligence_graph.py` (new) — 10 offline tests: networkx store
+  (nodes/edges, auto-create endpoints, neighbors, attr round-trip, protocol),
+  extraction (unknown-stakeholder filtering, marked data block + safety), end-to-end
+  `build_graph` from profiles and from plain names, and a Neo4j connection-validation
+  test (no server).
+
+**Result:** full suite **230 passed**, `ruff` clean.
+
 ## 2026-11-05 — Phase 2f: evidence-grounded agent profiles
 
 **Goal:** Turn retrieved `Evidence` into `AgentProfile`s whose goals, concerns and
