@@ -349,3 +349,16 @@ def stances_dataframe(stances: list[StanceRecord]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows, columns=columns)
+
+
+def final_stance_by_agent(stances: list[StanceRecord]) -> dict[str, Stance]:
+    """Return each agent's most recent stance, keyed by agent name.
+
+    This is the hand-off point to the quantitative layer: the plain dict it
+    returns can be passed straight to ``quant.simulate_impact`` without the
+    quant package needing to know anything about the simulation.
+    """
+    latest: dict[str, Stance] = {}
+    for record in stances:
+        latest[record.agent] = record.stance
+    return latest

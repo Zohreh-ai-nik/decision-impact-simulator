@@ -126,3 +126,12 @@ signals:
   - text: "A rival insurer announces it is freezing motor premiums for existing customers this year."
     stage: "Reaction"
     round: 2
+
+business:
+  customer_base: 500000
+  annual_premium: 650.0
+  price_increase_pct: 12.0
+  customer_groups:
+    - name: "Loyal policyholders"
+      agent: "Loyal Customers"
+      share: 1.0

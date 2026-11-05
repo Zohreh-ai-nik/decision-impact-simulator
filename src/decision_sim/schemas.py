@@ -84,6 +84,61 @@ class Signal(BaseModel):
     round: int = Field(ge=1)
 
 
+class CustomerGroup(BaseModel):
+    """A segment of the customer base represented by a single stakeholder agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    agent: str = Field(min_length=1, description="Stakeholder name that represents this group.")
+    share: float = Field(gt=0.0, le=1.0, description="Fraction of the customer base in [0, 1].")
+
+
+class BusinessContext(BaseModel):
+    """Quantitative business inputs used to turn stances into a revenue impact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    customer_base: int = Field(ge=1, description="Total number of customers.")
+    annual_premium: float = Field(gt=0.0, description="Current average annual premium.")
+    price_increase_pct: float = Field(description="Percentage change applied to the premium.")
+    customer_groups: list[CustomerGroup] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check_groups(self) -> BusinessContext:
+        names = [g.name for g in self.customer_groups]
+        seen: set[str] = set()
+        for name in names:
+            if name in seen:
+                raise ValueError(f"Duplicate customer group name: {name!r}.")
+            seen.add(name)
+
+        total_share = sum(g.share for g in self.customer_groups)
+        if total_share > 1.0 + 1e-9:
+            raise ValueError(
+                f"Customer group shares sum to {total_share:.4f}, which exceeds 1.0."
+            )
+        return self
+
+
+class ImpactResult(BaseModel):
+    """Monte Carlo summary of the revenue impact of a decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_runs: int = Field(ge=1)
+    baseline_revenue: float
+    new_annual_premium: float
+    churn_rate_mean: float = Field(ge=0.0, le=1.0)
+    lost_customers_mean: float = Field(ge=0.0)
+    revenue_impact_mean: float
+    revenue_impact_std: float = Field(ge=0.0)
+    revenue_impact_p10: float
+    revenue_impact_p50: float
+    revenue_impact_p90: float
+    samples: list[float] = Field(default_factory=list)
+
+
 class Scenario(BaseModel):
     """A complete decision-impact scenario."""
 
@@ -96,6 +151,7 @@ class Scenario(BaseModel):
     channels: list[Channel] = Field(min_length=1)
     signals: list[Signal] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
+    business: BusinessContext | None = None
 
     @model_validator(mode="after")
     def _check_references(self) -> Scenario:
@@ -121,6 +177,14 @@ class Scenario(BaseModel):
                 raise ValueError(
                     f"Signal references unknown stage {signal.stage!r}."
                 )
+
+        if self.business is not None:
+            for group in self.business.customer_groups:
+                if group.agent not in agent_set:
+                    raise ValueError(
+                        f"Customer group {group.name!r} references unknown agent "
+                        f"{group.agent!r}."
+                    )
 
         return self
 
