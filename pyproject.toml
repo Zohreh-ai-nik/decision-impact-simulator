@@ -34,6 +34,11 @@ ml = [
     "mlflow",
     "matplotlib",
 ]
+# Live web research via Tavily. Optional: the app runs offline with the Fake and
+# Cached providers, and the test suite never calls the network.
+research = [
+    "tavily-python",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/decision_sim"]

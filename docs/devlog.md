@@ -2,6 +2,30 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 2b: live Tavily search provider
+
+**Goal:** Add a real web provider behind the existing `SearchProvider` protocol,
+without making the core install or the test suite depend on the network.
+
+**What changed:**
+- `pyproject.toml` — new optional `research = ["tavily-python"]` extra (mirrors
+  the `ml` extra). The app runs offline with Fake/Cached; only live research needs
+  this extra.
+- `src/decision_sim/intelligence/web_search.py` — `TavilySearchProvider`:
+  - Key from `api_key=` or `TAVILY_API_KEY` (never logged); raises a clear error
+    if absent. `client=` is injectable so tests stub the API; the `tavily` import
+    is lazy (only when no client is passed), so core + tests don't need the extra.
+  - `search()` maps raw hits to `SearchResult` (`content`→snippet,
+    `published_date`→date via a tolerant `_parse_date`, `source="tavily"`), and
+    defensively skips malformed hits at this API boundary.
+- `tests/test_intelligence_search.py` — 8 new offline tests with a
+  `_FakeTavilyClient` stub: mapping, missing date, malformed-hit skipping, empty
+  response, `max_results` validation + passthrough, missing-key error, protocol
+  conformance, and composition with `CachedSearchProvider`.
+
+**Result:** full suite **174 passed**, `ruff` clean. The network is never hit in
+tests.
+
 ## 2026-11-05 — Phase 2a: offline-first search providers
 
 **Goal:** Give the research layer a clean, swappable way to fetch real facts

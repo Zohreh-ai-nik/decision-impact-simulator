@@ -12,6 +12,7 @@ from decision_sim.intelligence.web_search import (
     FakeSearchProvider,
     SearchProvider,
     SearchResult,
+    TavilySearchProvider,
 )
 from decision_sim.schemas import Source
 
@@ -135,3 +136,96 @@ def test_source_accepts_file_url():
 def test_source_still_rejects_junk():
     with pytest.raises(ValidationError):
         Source(url="not-a-url", title="x")
+
+
+# --- TavilySearchProvider (offline, injected client) ------------------------
+
+
+class _FakeTavilyClient:
+    """Stub Tavily client returning a canned raw response (no network)."""
+
+    def __init__(self, response: dict) -> None:
+        self._response = response
+        self.last_kwargs: dict | None = None
+
+    def search(self, **kwargs) -> dict:
+        self.last_kwargs = kwargs
+        return self._response
+
+
+_RAW_RESPONSE = {
+    "results": [
+        {
+            "title": "FCA raises concerns",
+            "url": "https://fca.org.uk/news",
+            "content": "regulator commentary",
+            "published_date": "2025-07-22T00:00:00Z",
+        },
+        {
+            "title": "Price rise reaction",
+            "url": "https://news.example.com/story",
+            "content": "customers shop around",
+        },
+    ]
+}
+
+
+def test_tavily_maps_raw_hits_to_results():
+    client = _FakeTavilyClient(_RAW_RESPONSE)
+    provider = TavilySearchProvider(client=client)
+    hits = provider.search("insurer price rise", max_results=3)
+    assert [h.title for h in hits] == ["FCA raises concerns", "Price rise reaction"]
+    assert hits[0].url == "https://fca.org.uk/news"
+    assert hits[0].snippet == "regulator commentary"
+    assert hits[0].published == datetime.date(2025, 7, 22)
+    assert all(h.source == "tavily" for h in hits)
+    assert client.last_kwargs == {"query": "insurer price rise", "max_results": 3}
+
+
+def test_tavily_missing_date_is_none():
+    provider = TavilySearchProvider(client=_FakeTavilyClient(_RAW_RESPONSE))
+    hits = provider.search("q")
+    assert hits[1].published is None
+
+
+def test_tavily_skips_malformed_hits():
+    response = {
+        "results": [
+            {"content": "no url or title"},
+            {"url": "https://ok.com", "title": "ok"},
+        ]
+    }
+    provider = TavilySearchProvider(client=_FakeTavilyClient(response))
+    hits = provider.search("q")
+    assert [h.url for h in hits] == ["https://ok.com"]
+
+
+def test_tavily_handles_empty_response():
+    provider = TavilySearchProvider(client=_FakeTavilyClient({}))
+    assert provider.search("q") == []
+
+
+def test_tavily_rejects_nonpositive_max_results():
+    provider = TavilySearchProvider(client=_FakeTavilyClient(_RAW_RESPONSE))
+    with pytest.raises(ValueError):
+        provider.search("q", max_results=0)
+
+
+def test_tavily_requires_key(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="Tavily API key"):
+        TavilySearchProvider()
+
+
+def test_tavily_satisfies_protocol():
+    assert isinstance(TavilySearchProvider(client=_FakeTavilyClient({})), SearchProvider)
+
+
+def test_tavily_composes_with_cache(tmp_path):
+    client = _FakeTavilyClient(_RAW_RESPONSE)
+    provider = TavilySearchProvider(client=client)
+    cached = CachedSearchProvider(provider, cache_dir=tmp_path)
+    first = cached.search("q")
+    client._response = {"results": []}  # inner would now return nothing
+    second = cached.search("q")
+    assert [h.title for h in first] == [h.title for h in second]  # served from cache

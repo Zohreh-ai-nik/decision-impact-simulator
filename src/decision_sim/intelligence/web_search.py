@@ -1,25 +1,29 @@
 """Search providers: deterministic offline sources of real facts.
 
 A :class:`SearchProvider` turns a query into a list of :class:`SearchResult`.
-Two providers live here and never touch the network:
+Three providers live here:
 
 * :class:`FakeSearchProvider` returns fixed, canned results — used by tests and
-  for an offline demo.
+  for an offline demo. Never touches the network.
 * :class:`CachedSearchProvider` wraps any provider and persists results to a
   JSON file, so a repeated query is answered from disk without calling the inner
-  provider again.
+  provider again. Never touches the network.
+* :class:`TavilySearchProvider` is the live web provider. It needs the optional
+  ``research`` extra (``pip install -e ".[research]"``) and a ``TAVILY_API_KEY``;
+  wrap it in :class:`CachedSearchProvider` to avoid repeat calls.
 
-The real network provider (Tavily) arrives in Phase 2b and will implement the
-same :class:`SearchProvider` protocol, so the rest of the system never changes.
+All three implement the same :class:`SearchProvider` protocol, so the rest of the
+system never changes when you swap one for another.
 """
 
 from __future__ import annotations
 
 import datetime
 import json
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -28,6 +32,7 @@ __all__ = [
     "FakeSearchProvider",
     "SearchProvider",
     "SearchResult",
+    "TavilySearchProvider",
     "DEFAULT_CACHE_DIR",
 ]
 
@@ -138,3 +143,69 @@ class CachedSearchProvider:
         self._cache[key] = results
         self._save()
         return [hit.model_copy(deep=True) for hit in results]
+
+
+def _parse_date(value: object) -> datetime.date | None:
+    """Best-effort ISO date parse from a provider's raw field; None if unusable."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+class TavilySearchProvider:
+    """Live web search via the Tavily API.
+
+    The API key is read from the ``api_key`` argument or the ``TAVILY_API_KEY``
+    environment variable; it is never logged. Pass ``client`` to inject a stub in
+    tests (the ``tavily`` package is only imported when no client is supplied, so
+    the core install and the test suite do not need the ``research`` extra).
+    """
+
+    name = "tavily"
+
+    def __init__(self, *, api_key: str | None = None, client: Any | None = None) -> None:
+        if client is not None:
+            self._client = client
+            return
+        key = api_key or os.environ.get("TAVILY_API_KEY")
+        if not key:
+            raise ValueError(
+                "No Tavily API key: pass api_key= or set TAVILY_API_KEY in the environment."
+            )
+        try:
+            from tavily import TavilyClient
+        except ImportError as exc:  # pragma: no cover - exercised only without the extra
+            raise ImportError(
+                'Tavily is not installed. Install the research extra: pip install -e ".[research]".'
+            ) from exc
+        self._client = TavilyClient(api_key=key)
+
+    def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
+        if max_results < 1:
+            raise ValueError(f"max_results must be >= 1, got {max_results}.")
+        response = self._client.search(query=query, max_results=max_results)
+        raw_hits = response.get("results", []) if isinstance(response, Mapping) else []
+        results: list[SearchResult] = []
+        for hit in raw_hits:
+            if not isinstance(hit, Mapping):
+                continue
+            url = hit.get("url")
+            title = hit.get("title") or url
+            if not url or not title:
+                continue  # skip malformed hits from the external API
+            try:
+                results.append(
+                    SearchResult(
+                        title=str(title),
+                        url=str(url),
+                        snippet=str(hit.get("content", "")),
+                        published=_parse_date(hit.get("published_date")),
+                        source=self.name,
+                    )
+                )
+            except ValueError:
+                continue  # non-http(s)/file url, etc.
+        return results
