@@ -2,6 +2,30 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 2d: retrieval (offline-first RAG)
+
+**Goal:** Retrieve the most relevant ingested `Evidence` for a query while
+keeping provenance, with no service or network needed for tests.
+
+**What changed:**
+- `src/decision_sim/intelligence/rag.py` (new):
+  - `Retriever` protocol — `add(evidence)` and `search(query, k=5)`.
+  - `KeywordRetriever` — dependency-free bag-of-words cosine baseline; stable
+    ties, drops zero-score docs; the default for tests and the offline demo.
+  - `EmbeddingRetriever` + `EmbeddingFn` protocol — cosine over vectors from an
+    **injected** embedder (batched), so the vector backend is swappable without
+    touching callers. Validates that the embedder returns one vector per text.
+  - Both return `Evidence`, preserving each chunk's `Source`.
+- `tests/test_intelligence_rag.py` (new) — 16 offline tests (relevance ranking,
+  `k` limiting, zero-score/empty handling, `k` validation, provenance, protocol
+  conformance; embedding retriever driven by a tiny deterministic fake embedder).
+
+**Design:** keyword retrieval gives a working zero-dependency baseline; the
+embedding retriever is the same interface with a pluggable vectoriser, so the
+Phase 2e Qdrant + fastembed backend drops in with no downstream changes.
+
+**Result:** full suite **203 passed**, `ruff` clean.
+
 ## 2026-11-05 — Phase 2c: document ingestion
 
 **Goal:** Turn local documents into citable `Evidence` chunks so uploaded files
