@@ -17,6 +17,8 @@ import streamlit as st
 from decision_sim.analysis.activity import activity_dataframe
 from decision_sim.analysis.report import build_report
 from decision_sim.config import SimConfig
+from decision_sim.intelligence.graph import NetworkxGraphStore, build_graph
+from decision_sim.intelligence.ingest import ingest_uploaded_text
 from decision_sim.ml.predict import churn_inputs_or_none
 from decision_sim.quant.formatting import (
     churn_assumption_text,
@@ -28,13 +30,14 @@ from decision_sim.quant.formatting import (
 )
 from decision_sim.quant.monte_carlo import simulate_impact
 from decision_sim.scenario import add_signal, list_scenarios, load_scenario
-from decision_sim.schemas import Post, Scenario
+from decision_sim.schemas import Evidence, Post, Scenario
 from decision_sim.simulation.graph import (
     final_stance_by_agent,
     iter_simulation,
     save_run,
     stances_dataframe,
 )
+from decision_sim.ui.helpers import build_evidence_by_agent, graph_edges_dataframe
 
 
 def _group_posts(posts: list[Post]) -> dict[str, dict[str, list[Post]]]:
@@ -54,6 +57,11 @@ def _render_posts(container, posts: list[Post]) -> None:
                 with st.expander(f"#{channel} ({len(channel_posts)})", expanded=True):
                     for post in channel_posts:
                         st.markdown(f"**{post.agent}** (round {post.round}): {post.text}")
+                        if post.sources:
+                            cites = ", ".join(
+                                f"[{s.title}]({s.url})" for s in post.sources
+                            )
+                            st.caption(f":grey[Sources: {cites}]")
 
 
 def _render_chart(scenario: Scenario, stances) -> None:
@@ -170,6 +178,23 @@ def _render_analysis(scenario: Scenario, posts: list[Post], stances) -> None:
             st.bar_chart(act_df.set_index("agent"))
 
 
+def _render_knowledge_graph(scenario: Scenario, evidence: list[Evidence]) -> None:
+    """Extract and show stakeholder relationships grounded in the uploaded docs."""
+    if not evidence:
+        return
+    st.subheader("Knowledge graph")
+    try:
+        store = build_graph(scenario.stakeholders, evidence, NetworkxGraphStore())
+    except Exception as exc:  # noqa: BLE001 - never let extraction break the run
+        st.caption(f":grey[Could not extract relationships: {exc}]")
+        return
+    edges = graph_edges_dataframe(store)
+    if edges.empty:
+        st.caption(":grey[No relationships were extracted from the uploaded documents.]")
+    else:
+        st.dataframe(edges, hide_index=True, use_container_width=True)
+
+
 
 def main() -> None:
     st.set_page_config(page_title="Decision Impact Simulator", layout="wide")
@@ -192,6 +217,26 @@ def main() -> None:
 
         max_rounds = st.number_input("Max rounds", min_value=1, value=20, step=1)
         seed = st.number_input("Seed", min_value=0, value=7, step=1)
+
+        st.divider()
+        st.subheader("Ground in documents")
+        uploads = st.file_uploader(
+            "Upload .txt / .md documents",
+            type=["txt", "md"],
+            accept_multiple_files=True,
+            help="Agents cite these documents during the simulation.",
+        )
+        evidence: list[Evidence] = []
+        if uploads:
+            for upload in uploads:
+                text = upload.getvalue().decode("utf-8", errors="replace")
+                evidence.extend(ingest_uploaded_text(upload.name, text))
+            doc_names = sorted({s.title for ev in evidence for s in ev.sources})
+            st.caption(
+                f"{len(doc_names)} document(s), {len(evidence)} chunk(s):"
+            )
+            for name in doc_names:
+                st.write(f"- {name}")
 
         st.divider()
         st.subheader("Add a signal")
@@ -235,9 +280,13 @@ def main() -> None:
         posts_col.info("Configure the run in the sidebar, then press **Run**.")
         return
 
+    evidence_by_agent = build_evidence_by_agent(scenario, evidence)
+
     final_state = None
     with st.spinner("Running simulation..."):
-        for state in iter_simulation(scenario, config):
+        for state in iter_simulation(
+            scenario, config, evidence_by_agent=evidence_by_agent
+        ):
             final_state = state
             _render_posts(posts_area, state["posts"])
             with chart_area.container():
@@ -248,6 +297,7 @@ def main() -> None:
         st.success(f"Run complete ({final_state['rounds_executed']} rounds). Saved to {path}")
         _render_impact(scenario, final_state["stances"])
         _render_analysis(scenario, final_state["posts"], final_state["stances"])
+        _render_knowledge_graph(scenario, evidence)
 
 
 if __name__ == "__main__":

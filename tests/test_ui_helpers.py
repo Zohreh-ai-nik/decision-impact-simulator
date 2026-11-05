@@ -9,10 +9,12 @@ from pydantic import ValidationError
 
 from decision_sim import llm
 from decision_sim.config import SimConfig
+from decision_sim.intelligence.graph import NetworkxGraphStore
 from decision_sim.scenario import add_signal, list_scenarios, load_named
-from decision_sim.schemas import AgentProfile, Channel, Scenario, Stage
+from decision_sim.schemas import AgentProfile, Channel, Evidence, Scenario, Source, Stage
 from decision_sim.simulation import graph
 from decision_sim.simulation.graph import iter_simulation, stances_dataframe
+from decision_sim.ui.helpers import build_evidence_by_agent, graph_edges_dataframe
 from tests.conftest import FakeLLM
 
 _DEFAULT_REPLY = json.dumps(
@@ -115,3 +117,89 @@ def test_stances_dataframe_empty() -> None:
     df = stances_dataframe([])
     assert df.empty
     assert list(df.columns) == ["agent", "stage", "round", "global_round", "score"]
+
+
+# --- build_evidence_by_agent ------------------------------------------------
+
+
+def _evidence(text: str, title: str) -> Evidence:
+    return Evidence(
+        text=text,
+        sources=[Source(url=f"file://uploads/{title}", title=title, snippet=text[:50])],
+    )
+
+
+def test_build_evidence_by_agent_returns_relevant_per_agent() -> None:
+    scenario = Scenario(
+        decision="Raise premiums by 12%.",
+        client="ShieldDrive Insurance (fictional)",
+        stakeholders=[
+            AgentProfile(name="Regulator", type="organisation", role="oversees fairness"),
+            AgentProfile(name="Customer", type="group", role="buys insurance"),
+        ],
+        stages=[Stage(name="S1", goal="g", rounds=1)],
+        channels=[Channel(name="Main", can_post=["Regulator", "Customer"], can_read=[])],
+    )
+    evidence = [
+        _evidence("The regulator oversees fairness in pricing.", "reg.md"),
+        _evidence("Customers buy insurance and compare premiums.", "cust.md"),
+    ]
+
+    mapping = build_evidence_by_agent(scenario, evidence, k=1)
+
+    assert mapping["Regulator"][0].sources[0].title == "reg.md"
+    assert mapping["Customer"][0].sources[0].title == "cust.md"
+    assert all(len(v) <= 1 for v in mapping.values())
+
+
+def test_build_evidence_by_agent_empty_evidence_is_empty_dict() -> None:
+    scenario = _scenario()
+    assert build_evidence_by_agent(scenario, []) == {}
+
+
+def test_build_evidence_by_agent_feeds_iter_simulation(patched_llm: FakeLLM) -> None:
+    patched_llm.default = json.dumps(
+        {
+            "channel": "Main",
+            "text": "Grounded.",
+            "stance": {
+                "score": 0.0,
+                "likely_action": "wait",
+                "confidence": 0.5,
+                "reason": "Reviewing.",
+            },
+            "cited": [1],
+        }
+    )
+    scenario = _scenario()
+    evidence = [_evidence("A role role premium detail.", "doc.md")]
+    mapping = build_evidence_by_agent(scenario, evidence, k=1)
+    config = SimConfig(model="fake/model", max_rounds=10, seed=1)
+
+    final = graph.run_simulation(
+        scenario, config, save=False, evidence_by_agent=mapping
+    )
+
+    assert any(p.sources for p in final["posts"])
+
+
+# --- graph_edges_dataframe --------------------------------------------------
+
+
+def test_graph_edges_dataframe_lists_edges() -> None:
+    store = NetworkxGraphStore()
+    store.add_edge("A", "B", "influences")
+    store.add_edge("B", "C", "opposes")
+
+    df = graph_edges_dataframe(store)
+
+    assert list(df.columns) == ["source", "relation", "target"]
+    assert len(df) == 2
+    assert set(df["relation"]) == {"influences", "opposes"}
+
+
+def test_graph_edges_dataframe_empty_store() -> None:
+    df = graph_edges_dataframe(NetworkxGraphStore())
+    assert df.empty
+    assert list(df.columns) == ["source", "relation", "target"]
+

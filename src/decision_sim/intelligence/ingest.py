@@ -13,6 +13,7 @@ stored in ``Evidence.text`` and never interpreted as instructions here.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 from decision_sim.schemas import Evidence, Source
 
@@ -21,6 +22,7 @@ __all__ = [
     "chunk_text",
     "ingest_dir",
     "ingest_file",
+    "ingest_uploaded_text",
     "load_text",
 ]
 
@@ -87,6 +89,38 @@ def ingest_file(
     return [
         Evidence(text=chunk, sources=[_source_for(p, chunk)])
         for chunk in chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+    ]
+
+
+def ingest_uploaded_text(
+    name: str,
+    text: str,
+    *,
+    chunk_size: int = 800,
+    overlap: int = 100,
+) -> list[Evidence]:
+    """Turn an in-memory uploaded document into citable :class:`Evidence` chunks.
+
+    Unlike :func:`ingest_file` this never touches the filesystem, so it suits a
+    web upload. Each chunk cites a synthetic ``file://uploads/<name>`` source, so
+    uploaded documents are cited exactly like files and web results. ``name`` is
+    sanitised to a safe, path-free filename for the URL and title.
+    """
+    safe_name = Path(name).name.strip() or "document"
+    quoted = quote(safe_name)
+    chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+    return [
+        Evidence(
+            text=chunk,
+            sources=[
+                Source(
+                    url=f"file://uploads/{quoted}",
+                    title=safe_name,
+                    snippet=chunk[:200],
+                )
+            ],
+        )
+        for chunk in chunks
     ]
 
 

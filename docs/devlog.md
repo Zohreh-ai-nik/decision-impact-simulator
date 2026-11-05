@@ -2,6 +2,32 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Phase 2i: UI for uploaded docs + knowledge graph
+
+**Goal:** Let the user upload documents in the Streamlit app, ground the
+simulation in them (reusing Phase 2h's `evidence_by_agent`), and see the uploaded
+docs, the sources agents cite, and the stakeholder knowledge graph.
+
+**Design:** all logic stays in `src` (tested, no Streamlit import); `app.py` is thin.
+- `intelligence/ingest.py` — new `ingest_uploaded_text(name, text, ...)` turns an
+  in-memory upload into `Evidence` chunks with a sanitised `file://uploads/<name>`
+  source (no temp files; path-traversal-safe via `Path(name).name` + `quote`).
+- `ui/helpers.py` (new) — `build_evidence_by_agent(scenario, evidence, *, k)` indexes
+  evidence in an offline `KeywordRetriever` and retrieves the top-`k` per stakeholder
+  (query = name + role + goals + concerns), ready for `iter_simulation`;
+  `graph_edges_dataframe(store)` renders a `GraphStore`'s edges as a tidy frame.
+- `ui/app.py` — sidebar file uploader (.txt/.md, multiple) with a document list;
+  passes `evidence_by_agent` into `iter_simulation`; shows each post's cited sources
+  as links; new "Knowledge graph" section built with `build_graph` + `NetworkxGraphStore`
+  (edge table), guarded so an extraction failure never breaks the run.
+
+**Files changed:**
+- `src/decision_sim/intelligence/ingest.py`, `src/decision_sim/ui/helpers.py` (new),
+  `src/decision_sim/ui/app.py`.
+- `tests/test_intelligence_ingest.py` (+3), `tests/test_ui_helpers.py` (+5).
+
+**Result:** `ruff check` clean; `pytest -q` → 239 passed (was 234).
+
 ## 2026-11-05 — Phase 2h: grounded simulation + citations
 
 **Goal:** Let agents cite real evidence during the war-game, so each `Post` and
