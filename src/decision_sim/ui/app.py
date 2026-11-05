@@ -17,7 +17,13 @@ import streamlit as st
 from decision_sim.analysis.activity import activity_dataframe
 from decision_sim.analysis.report import build_report
 from decision_sim.config import SimConfig
-from decision_sim.quant.formatting import impact_histogram, impact_summary_rows
+from decision_sim.quant.formatting import (
+    churn_assumption_text,
+    format_gbp_millions,
+    format_pct_change,
+    impact_histogram,
+    impact_summary_rows,
+)
 from decision_sim.quant.monte_carlo import simulate_impact
 from decision_sim.scenario import add_signal, list_scenarios, load_scenario
 from decision_sim.schemas import Post, Scenario
@@ -68,23 +74,33 @@ def _render_impact(scenario: Scenario, stances) -> None:
     agent_stances = final_stance_by_agent(stances)
     result = simulate_impact(agent_stances, scenario.business)
 
-    st.subheader("Estimated impact")
+    st.subheader("Estimated impact (vs. no price rise)")
+    st.caption(churn_assumption_text(scenario.business))
     cols = st.columns(3)
-    cols[0].metric("Revenue impact (p50)", f"{result.revenue_impact_p50:,.0f}")
-    cols[1].metric(
-        "Downside (p10)", f"{result.revenue_impact_p10:,.0f}"
+    cols[0].metric(
+        "Median (p50)",
+        format_gbp_millions(result.revenue_impact_p50),
+        format_pct_change(result.revenue_impact_pct_p50),
     )
-    cols[2].metric("Upside (p90)", f"{result.revenue_impact_p90:,.0f}")
+    cols[1].metric(
+        "Downside (p10)",
+        format_gbp_millions(result.revenue_impact_p10),
+        format_pct_change(result.revenue_impact_pct_p10),
+    )
+    cols[2].metric(
+        "Upside (p90)",
+        format_gbp_millions(result.revenue_impact_p90),
+        format_pct_change(result.revenue_impact_pct_p90),
+    )
 
     for label, value in impact_summary_rows(result):
         st.write(f"- **{label}:** {value}")
 
-    centers, counts = impact_histogram(result)
+    centers, counts = impact_histogram(result, in_millions=True)
     if centers:
-        hist_df = pd.DataFrame({"revenue_impact": centers, "runs": counts}).set_index(
-            "revenue_impact"
-        )
-        st.bar_chart(hist_df)
+        axis = "Revenue impact (£m)"
+        hist_df = pd.DataFrame({axis: centers, "Simulation runs": counts}).set_index(axis)
+        st.bar_chart(hist_df, x_label=axis, y_label="Simulation runs")
 
 
 def _render_analysis(scenario: Scenario, posts: list[Post], stances) -> None:

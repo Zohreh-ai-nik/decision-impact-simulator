@@ -2,6 +2,51 @@
 
 A short diary of what was built, why, and the results.
 
+## 2026-11-05 — Recalibrated churn, parameter uncertainty and no-rise baseline
+
+**Problem:** The first quant model gave ~40.8% churn from a 12% price rise (churn
+was a single `max_churn=0.6` cap scaled by stance) and a p10–p90 range of only
+~0.6%, because the only randomness was binomial sampling noise on a fixed
+probability. Both were unrealistic.
+
+**What changed:**
+- `schemas.py` — `BusinessContext` gains `base_churn` (8%), `base_churn_sd` (2pp),
+  `max_extra_churn` (15pp) and `max_extra_churn_sd` (4pp), all validated to
+  sensible ranges. `ImpactResult` gains `baseline_churn_rate_mean` and
+  `revenue_impact_pct_{mean,p10,p50,p90}`; `baseline_revenue` is now the mean
+  revenue in the *no price rise* world.
+- `quant/mapping.py` — replaced the single cap with
+  `total_churn = base_churn + max_extra_churn * dissatisfaction`
+  (`extra_churn_probability`, `total_churn_probability`), so a hostile, confident
+  customer group tops out at 8% + 15pp = 23%.
+- `quant/monte_carlo.py` — each run samples `base_churn` and the extra-churn
+  sensitivity from clipped Normal distributions (parameter uncertainty). A
+  no-price-rise baseline (base churn, old premium) is simulated alongside the
+  scenario with *coupled* draws: scenario leavers = baseline leavers + extra
+  leavers, so the impact compares like with like. Customers not in any group
+  churn at the base rate only (previously they were silently counted as lost).
+  `MonteCarloConfig.max_churn` removed; calibration now lives in the YAML.
+- `quant/formatting.py` — £ / £m / signed-% formatters, `impact_histogram(...,
+  in_millions=True)` for a £m axis, `churn_assumption_text(business)`; summary
+  rows show £ and % change versus baseline.
+- `ui/app.py` — impact panel shows £m and % per percentile, a caption with the
+  churn assumptions used, and a histogram labelled "Revenue impact (£m)".
+- `scenarios/insurer_price_rise.yaml` — churn calibration added to `business:`.
+- Tests — mapping bounds/monotonicity, caps hold for extreme stances, wider
+  spread when uncertainty > 0, same seed reproducible, zero impact when no rise
+  and a supportive stance, baseline coupling, ungrouped customers, formatting.
+
+**Results (bundled scenario, example stances, 2,000 runs, seed 7):**
+- Hostile customers (score -0.8, confidence 0.9): churn ~20.1% (baseline ~7.9%),
+  median impact -£8.3m (-2.7%), p10–p90 -£23.4m to +£6.7m (-7.8% to +2.3%).
+- Neutral customers (score 0.0, confidence 0.7): churn ~13.2%, median impact
+  +£16.9m (+5.6%), p10–p90 +£10.3m to +£23.3m.
+- `ruff check` clean; `pytest -q` → 86 passed.
+
+**Note:** The calibration values (8%, 15pp and their spreads) are illustrative
+assumptions for a fictional insurer, not measured data; they are editable in the
+YAML.
+
 ## 2026-11-05 — Activity metrics, run report, and UI analysis panel
 
 **Goal:** Surface per-agent activity and bundle coalitions + influence +

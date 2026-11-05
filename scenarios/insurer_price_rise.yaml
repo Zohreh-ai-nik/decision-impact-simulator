@@ -131,6 +131,12 @@ business:
   customer_base: 500000
   annual_premium: 650.0
   price_increase_pct: 12.0
+  # Churn calibration: total churn = base_churn + up to max_extra_churn from a
+  # hostile customer stance. The *_sd values add parameter uncertainty per run.
+  base_churn: 0.08
+  base_churn_sd: 0.02
+  max_extra_churn: 0.15
+  max_extra_churn_sd: 0.04
   customer_groups:
     - name: "Loyal policyholders"
       agent: "Loyal Customers"

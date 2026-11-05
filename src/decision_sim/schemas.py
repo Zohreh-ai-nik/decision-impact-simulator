@@ -103,6 +103,24 @@ class BusinessContext(BaseModel):
     annual_premium: float = Field(gt=0.0, description="Current average annual premium.")
     price_increase_pct: float = Field(description="Percentage change applied to the premium.")
     customer_groups: list[CustomerGroup] = Field(min_length=1)
+    base_churn: float = Field(
+        default=0.08,
+        ge=0.0,
+        le=1.0,
+        description="Annual churn that happens anyway, with no price rise.",
+    )
+    base_churn_sd: float = Field(
+        default=0.02, ge=0.0, description="Uncertainty (std dev) on base churn."
+    )
+    max_extra_churn: float = Field(
+        default=0.15,
+        ge=0.0,
+        le=1.0,
+        description="Extra churn added when a customer group is fully hostile.",
+    )
+    max_extra_churn_sd: float = Field(
+        default=0.04, ge=0.0, description="Uncertainty (std dev) on the extra-churn cap."
+    )
 
     @model_validator(mode="after")
     def _check_groups(self) -> BusinessContext:
@@ -127,15 +145,26 @@ class ImpactResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     n_runs: int = Field(ge=1)
-    baseline_revenue: float
+    baseline_revenue: float = Field(
+        description="Mean annual revenue in the 'no price rise' world (base churn only)."
+    )
     new_annual_premium: float
-    churn_rate_mean: float = Field(ge=0.0, le=1.0)
+    baseline_churn_rate_mean: float = Field(
+        ge=0.0, le=1.0, description="Mean churn rate with no price rise (base churn only)."
+    )
+    churn_rate_mean: float = Field(
+        ge=0.0, le=1.0, description="Mean churn rate after the price rise."
+    )
     lost_customers_mean: float = Field(ge=0.0)
     revenue_impact_mean: float
     revenue_impact_std: float = Field(ge=0.0)
     revenue_impact_p10: float
     revenue_impact_p50: float
     revenue_impact_p90: float
+    revenue_impact_pct_mean: float
+    revenue_impact_pct_p10: float
+    revenue_impact_pct_p50: float
+    revenue_impact_pct_p90: float
     samples: list[float] = Field(default_factory=list)
 
 
