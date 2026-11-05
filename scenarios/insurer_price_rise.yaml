@@ -1,0 +1,128 @@
+decision: "Raise motor insurance premiums by 12% across all renewing policies."
+client: "ShieldDrive Insurance (fictional)"
+
+assumptions:
+  - "ShieldDrive Insurance is a fictional company used for simulation only."
+  - "The 12% rise applies at renewal, not mid-term."
+  - "Competitor pricing is assumed broadly stable over the simulation window."
+  - "No regulatory cap on motor premium increases applies in this market."
+
+stakeholders:
+  - name: "CEO"
+    type: person
+    role: "Chief Executive Officer of ShieldDrive Insurance"
+    goals:
+      - "Protect profitability and solvency"
+      - "Maintain market confidence"
+    concerns:
+      - "Customer churn to competitors"
+      - "Reputational damage in the press"
+    style: "Decisive, measured, focused on the bottom line."
+
+  - name: "Head of Customer Retention"
+    type: person
+    role: "Leads retention and loyalty programmes"
+    goals:
+      - "Keep renewal rates high"
+      - "Soften the impact for loyal customers"
+    concerns:
+      - "Spike in cancellations at renewal"
+      - "Pressure on retention targets"
+    style: "Data-driven, pragmatic, customer-first."
+
+  - name: "Regulator"
+    type: organisation
+    role: "Financial conduct regulator overseeing fair pricing"
+    goals:
+      - "Ensure customers are treated fairly"
+      - "Prevent price walking and unjustified rises"
+    concerns:
+      - "Vulnerable customers being priced out"
+      - "Lack of transparency in the increase"
+    style: "Formal, cautious, rules-oriented."
+
+  - name: "Loyal Customers"
+    type: group
+    role: "Long-standing policyholders renewing their motor cover"
+    goals:
+      - "Fair price for continued cover"
+      - "Recognition of their loyalty"
+    concerns:
+      - "Paying more for the same cover"
+      - "Feeling penalised for staying"
+    style: "Frustrated but open to dialogue."
+
+  - name: "Consumer Advocacy Group"
+    type: organisation
+    role: "Campaigns for fair treatment of insurance customers"
+    goals:
+      - "Hold insurers accountable"
+      - "Secure better outcomes for consumers"
+    concerns:
+      - "Hidden or excessive price rises"
+      - "Impact on low-income drivers"
+    style: "Vocal, campaigning, media-savvy."
+
+  - name: "Financial Press"
+    type: organisation
+    role: "Business and personal-finance journalists covering insurance"
+    goals:
+      - "Break and explain the story"
+      - "Scrutinise the justification for the rise"
+    concerns:
+      - "Being spun by corporate messaging"
+      - "Missing the customer angle"
+    style: "Inquisitive, sceptical, deadline-driven."
+
+stages:
+  - name: "Announcement"
+    goal: "ShieldDrive communicates the 12% premium rise to stakeholders."
+    rounds: 2
+  - name: "Reaction"
+    goal: "Stakeholders respond publicly and privately to the announcement."
+    rounds: 3
+  - name: "Negotiation"
+    goal: "Parties push for concessions, exemptions or clarifications."
+    rounds: 3
+  - name: "Resolution"
+    goal: "Positions settle and the net impact of the decision emerges."
+    rounds: 2
+
+channels:
+  - name: "Internal Briefing"
+    can_post:
+      - "CEO"
+      - "Head of Customer Retention"
+    can_read:
+      - "CEO"
+      - "Head of Customer Retention"
+
+  - name: "Regulatory Correspondence"
+    can_post:
+      - "CEO"
+      - "Regulator"
+      - "Consumer Advocacy Group"
+    can_read:
+      - "CEO"
+      - "Head of Customer Retention"
+      - "Regulator"
+      - "Consumer Advocacy Group"
+
+  - name: "Public Forum"
+    can_post:
+      - "CEO"
+      - "Loyal Customers"
+      - "Consumer Advocacy Group"
+      - "Financial Press"
+    can_read:
+      - "CEO"
+      - "Head of Customer Retention"
+      - "Regulator"
+      - "Loyal Customers"
+      - "Consumer Advocacy Group"
+      - "Financial Press"
+
+signals:
+  - text: "A rival insurer announces it is freezing motor premiums for existing customers this year."
+    stage: "Reaction"
+    round: 2
